@@ -1,0 +1,282 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: nodenetworkconfigs.infra.sdncontroller.io
+spec:
+  group: infra.sdncontroller.io
+  names:
+    kind: NodeNetworkConfig
+    listKind: NodeNetworkConfigList
+    plural: nodenetworkconfigs
+    shortNames:
+    - nnc
+    singular: nodenetworkconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.nodeName
+      name: Node
+      type: string
+    - jsonPath: .spec.nodeType
+      name: Type
+      type: string
+    - jsonPath: .spec.computeType
+      name: Compute
+      type: string
+    - jsonPath: .spec.dpuEnabled
+      name: DPU
+      type: boolean
+    - jsonPath: .spec.defaultMTU
+      name: MTU
+      type: integer
+    - jsonPath: .status.tunnelsEstablished
+      name: Tunnels
+      type: integer
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NodeNetworkConfig describes the complete network configuration
+          for a single node.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NodeNetworkConfigSpec defines the desired state of NodeNetworkConfig.
+            properties:
+              computeType:
+                default: CPU
+                description: computeType is the compute workload type.
+                enum:
+                - CPU
+                - GPU
+                type: string
+              defaultMTU:
+                default: 1500
+                description: defaultMTU is the default MTU for this node.
+                format: int32
+                maximum: 9216
+                minimum: 1280
+                type: integer
+              dpuDevice:
+                description: dpuDevice is the DPU model (e.g., bf2, bf3).
+                type: string
+              dpuEnabled:
+                default: false
+                description: dpuEnabled indicates DPU offload support.
+                type: boolean
+              hardware:
+                description: hardware describes the physical NIC configuration.
+                properties:
+                  nics:
+                    description: nics lists all discovered NICs.
+                    items:
+                      description: NICInfo describes a discovered NIC on the node.
+                      properties:
+                        device:
+                          description: device is the Linux device name.
+                          type: string
+                        model:
+                          description: model is the hardware model.
+                          type: string
+                        numVFs:
+                          description: numVFs is the number of virtual functions configured.
+                          format: int32
+                          type: integer
+                        offloadCapable:
+                          description: offloadCapable indicates hardware offload support.
+                          type: boolean
+                        switchdevMode:
+                          description: switchdevMode indicates if switchdev is enabled.
+                          type: boolean
+                        vendor:
+                          description: vendor is the hardware vendor.
+                          type: string
+                      required:
+                      - device
+                      type: object
+                    type: array
+                type: object
+              libvirt:
+                description: libvirt configures libvirt integration for VM hosts.
+                properties:
+                  bridgeMapping:
+                    additionalProperties:
+                      type: string
+                    description: bridgeMapping maps network roles to OVS bridges.
+                    type: object
+                  enabled:
+                    description: enabled activates libvirt integration.
+                    type: boolean
+                required:
+                - enabled
+                type: object
+              nodeName:
+                description: nodeName is the Kubernetes node name.
+                type: string
+              nodeType:
+                default: BareMetal
+                description: nodeType is the host type.
+                enum:
+                - BareMetal
+                - VM
+                type: string
+              ovsBridges:
+                description: ovsBridges defines the OVS bridges to create on this
+                  node.
+                items:
+                  description: OVSBridge defines an OVS bridge configuration.
+                  properties:
+                    datapathType:
+                      default: system
+                      description: datapathType is the OVS datapath type.
+                      enum:
+                      - system
+                      - netdev
+                      type: string
+                    name:
+                      description: name is the bridge name.
+                      type: string
+                    type:
+                      description: type is the bridge role.
+                      enum:
+                      - integration
+                      - external
+                      - tunnel
+                      type: string
+                    uplinks:
+                      description: uplinks are physical interfaces attached to this
+                        bridge.
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - name
+                  - type
+                  type: object
+                type: array
+              tunnelProtocol:
+                default: VXLAN
+                description: tunnelProtocol is the default tunnel encapsulation.
+                enum:
+                - VXLAN
+                - IPIP
+                - GRE
+                type: string
+              tunnelSourceIP:
+                description: tunnelSourceIP is the underlay IP used as tunnel source.
+                type: string
+            required:
+            - nodeName
+            type: object
+          status:
+            description: NodeNetworkConfigStatus defines the observed state of NodeNetworkConfig.
+            properties:
+              agentVersion:
+                description: agentVersion is the running node agent version.
+                type: string
+              conditions:
+                description: conditions represent the current state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              offloadStatus:
+                description: offloadStatus summarizes the hardware offload state.
+                type: string
+              ovsVersion:
+                description: ovsVersion is the installed OVS version.
+                type: string
+              phase:
+                description: phase is the current lifecycle phase.
+                enum:
+                - Pending
+                - Configured
+                - Degraded
+                - Error
+                type: string
+              tunnelsEstablished:
+                description: tunnelsEstablished is the number of active tunnels from
+                  this node.
+                format: int32
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

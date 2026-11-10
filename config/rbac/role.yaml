@@ -1,0 +1,165 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - gateway.sdncontroller.io
+  resources:
+  - internetgateways
+  - natgateways
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - gateway.sdncontroller.io
+  resources:
+  - internetgateways/finalizers
+  - natgateways/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - gateway.sdncontroller.io
+  resources:
+  - internetgateways/status
+  - natgateways/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - infra.sdncontroller.io
+  resources:
+  - bonds
+  - networkinterfaces
+  - nodenetworkconfigs
+  - tunnels
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infra.sdncontroller.io
+  resources:
+  - bonds/finalizers
+  - networkinterfaces/finalizers
+  - nodenetworkconfigs/finalizers
+  - tunnels/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - infra.sdncontroller.io
+  resources:
+  - bonds/status
+  - networkinterfaces/status
+  - nodenetworkconfigs/status
+  - tunnels/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - nfv.sdncontroller.io
+  resources:
+  - servicechains
+  - virtualnetworkfunctions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - nfv.sdncontroller.io
+  resources:
+  - servicechains/finalizers
+  - virtualnetworkfunctions/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - nfv.sdncontroller.io
+  resources:
+  - servicechains/status
+  - virtualnetworkfunctions/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - service.sdncontroller.io
+  resources:
+  - firewalls
+  - loadbalancers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - service.sdncontroller.io
+  resources:
+  - firewalls/finalizers
+  - loadbalancers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - service.sdncontroller.io
+  resources:
+  - firewalls/status
+  - loadbalancers/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - vpc.sdncontroller.io
+  resources:
+  - subnets
+  - vpcs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - vpc.sdncontroller.io
+  resources:
+  - subnets/finalizers
+  - vpcs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - vpc.sdncontroller.io
+  resources:
+  - subnets/status
+  - vpcs/status
+  verbs:
+  - get
+  - patch
+  - update

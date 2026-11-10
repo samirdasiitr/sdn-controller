@@ -1,0 +1,134 @@
+# Copyright 2024 The SDN Controller Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Complete SDN Controller example with VPC, Subnets, Gateways, LoadBalancer, and Firewall.
+# All resources are properly interconnected.
+
+# VPC
+apiVersion: vpc.sdncontroller.io/v1alpha1
+kind: VPC
+metadata:
+  name: production-vpc
+  labels:
+    app.kubernetes.io/name: sdncontroller
+    environment: production
+spec:
+  cidr: "10.100.0.0/16"
+  mtu: 9000
+---
+# Public Subnet for web-facing services
+apiVersion: vpc.sdncontroller.io/v1alpha1
+kind: Subnet
+metadata:
+  name: public-subnet
+  labels:
+    app.kubernetes.io/name: sdncontroller
+    environment: production
+    tier: public
+spec:
+  vpcRef: production-vpc
+  cidr: "10.100.1.0/24"
+  type: Public
+---
+# Private Subnet for backend services
+apiVersion: vpc.sdncontroller.io/v1alpha1
+kind: Subnet
+metadata:
+  name: private-subnet
+  labels:
+    app.kubernetes.io/name: sdncontroller
+    environment: production
+    tier: private
+spec:
+  vpcRef: production-vpc
+  cidr: "10.100.2.0/24"
+  type: Private
+---
+# Internet Gateway for public subnet egress/ingress
+apiVersion: gateway.sdncontroller.io/v1alpha1
+kind: InternetGateway
+metadata:
+  name: production-igw
+  labels:
+    app.kubernetes.io/name: sdncontroller
+    environment: production
+spec:
+  vpcRef: production-vpc
+---
+# NAT Gateway for private subnet egress
+apiVersion: gateway.sdncontroller.io/v1alpha1
+kind: NATGateway
+metadata:
+  name: production-natgw
+  labels:
+    app.kubernetes.io/name: sdncontroller
+    environment: production
+spec:
+  vpcRef: production-vpc
+  subnetRef: public-subnet
+---
+# LoadBalancer for web-tier traffic distribution
+apiVersion: service.sdncontroller.io/v1alpha1
+kind: LoadBalancer
+metadata:
+  name: web-lb
+  labels:
+    app.kubernetes.io/name: sdncontroller
+    environment: production
+spec:
+  vpcRef: production-vpc
+  subnetRef: public-subnet
+  type: Public
+  listeners:
+    - port: 80
+      protocol: HTTP
+      targetPort: 8080
+    - port: 443
+      protocol: HTTPS
+      targetPort: 8443
+---
+# Firewall rules for network security
+apiVersion: service.sdncontroller.io/v1alpha1
+kind: Firewall
+metadata:
+  name: production-firewall
+  labels:
+    app.kubernetes.io/name: sdncontroller
+    environment: production
+spec:
+  vpcRef: production-vpc
+  ingressRules:
+    - name: allow-http
+      priority: 100
+      protocol: TCP
+      port: 80
+      source: "0.0.0.0/0"
+      action: Allow
+    - name: allow-https
+      priority: 200
+      protocol: TCP
+      port: 443
+      source: "0.0.0.0/0"
+      action: Allow
+    - name: deny-all-ingress
+      priority: 65535
+      protocol: "*"
+      source: "0.0.0.0/0"
+      action: Deny
+  egressRules:
+    - name: allow-all-egress
+      priority: 100
+      protocol: "*"
+      destination: "0.0.0.0/0"
+      action: Allow

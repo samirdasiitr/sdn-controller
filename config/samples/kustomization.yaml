@@ -1,0 +1,15 @@
+## Append samples of your project ##
+resources:
+- vpc_v1alpha1_vpc.yaml
+- vpc_v1alpha1_subnet.yaml
+- gateway_v1alpha1_internetgateway.yaml
+- gateway_v1alpha1_natgateway.yaml
+- service_v1alpha1_loadbalancer.yaml
+- service_v1alpha1_firewall.yaml
+- infra_v1alpha1_networkinterface.yaml
+- infra_v1alpha1_bond.yaml
+- infra_v1alpha1_tunnel.yaml
+- infra_v1alpha1_nodenetworkconfig.yaml
+- nfv_v1alpha1_servicechain.yaml
+- nfv_v1alpha1_virtualnetworkfunction.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

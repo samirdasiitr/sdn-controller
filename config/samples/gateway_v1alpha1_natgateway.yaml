@@ -1,0 +1,9 @@
+apiVersion: gateway.sdncontroller.io/v1alpha1
+kind: NATGateway
+metadata:
+  labels:
+    app.kubernetes.io/name: sdncontroller
+    app.kubernetes.io/managed-by: kustomize
+  name: natgateway-sample
+spec:
+  # TODO(user): Add fields here

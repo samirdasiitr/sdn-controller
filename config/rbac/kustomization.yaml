@@ -1,0 +1,61 @@
+resources:
+# All RBAC will be applied under this service account in
+# the deployment namespace. You may comment out this resource
+# if your manager will use a service account that exists at
+# runtime. Be sure to update RoleBinding and ClusterRoleBinding
+# subjects if changing service account names.
+- service_account.yaml
+- role.yaml
+- role_binding.yaml
+- leader_election_role.yaml
+- leader_election_role_binding.yaml
+# The following RBAC configurations are used to protect
+# the metrics endpoint with authn/authz. These configurations
+# ensure that only authorized users and service accounts
+# can access the metrics endpoint. Comment the following
+# permissions if you want to disable this protection.
+# More info: https://book.kubebuilder.io/reference/metrics.html
+- metrics_auth_role.yaml
+- metrics_auth_role_binding.yaml
+- metrics_reader_role.yaml
+# For each CRD, "Admin", "Editor" and "Viewer" roles are scaffolded by
+# default, aiding admins in cluster management. Those roles are
+# not used by the sdncontroller itself. You can comment the following lines
+# if you do not want those helpers be installed with your Project.
+- nfv_virtualnetworkfunction_admin_role.yaml
+- nfv_virtualnetworkfunction_editor_role.yaml
+- nfv_virtualnetworkfunction_viewer_role.yaml
+- nfv_servicechain_admin_role.yaml
+- nfv_servicechain_editor_role.yaml
+- nfv_servicechain_viewer_role.yaml
+- infra_nodenetworkconfig_admin_role.yaml
+- infra_nodenetworkconfig_editor_role.yaml
+- infra_nodenetworkconfig_viewer_role.yaml
+- infra_tunnel_admin_role.yaml
+- infra_tunnel_editor_role.yaml
+- infra_tunnel_viewer_role.yaml
+- infra_bond_admin_role.yaml
+- infra_bond_editor_role.yaml
+- infra_bond_viewer_role.yaml
+- infra_networkinterface_admin_role.yaml
+- infra_networkinterface_editor_role.yaml
+- infra_networkinterface_viewer_role.yaml
+- service_firewall_admin_role.yaml
+- service_firewall_editor_role.yaml
+- service_firewall_viewer_role.yaml
+- service_loadbalancer_admin_role.yaml
+- service_loadbalancer_editor_role.yaml
+- service_loadbalancer_viewer_role.yaml
+- gateway_natgateway_admin_role.yaml
+- gateway_natgateway_editor_role.yaml
+- gateway_natgateway_viewer_role.yaml
+- gateway_internetgateway_admin_role.yaml
+- gateway_internetgateway_editor_role.yaml
+- gateway_internetgateway_viewer_role.yaml
+- vpc_subnet_admin_role.yaml
+- vpc_subnet_editor_role.yaml
+- vpc_subnet_viewer_role.yaml
+- vpc_vpc_admin_role.yaml
+- vpc_vpc_editor_role.yaml
+- vpc_vpc_viewer_role.yaml
+

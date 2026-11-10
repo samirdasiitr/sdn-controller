@@ -1,0 +1,9 @@
+apiVersion: vpc.sdncontroller.io/v1alpha1
+kind: Subnet
+metadata:
+  labels:
+    app.kubernetes.io/name: sdncontroller
+    app.kubernetes.io/managed-by: kustomize
+  name: subnet-sample
+spec:
+  # TODO(user): Add fields here

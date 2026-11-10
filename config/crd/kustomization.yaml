@@ -1,0 +1,27 @@
+# This kustomization.yaml is not intended to be run by itself,
+# since it depends on service name and namespace that are out of this kustomize package.
+# It should be run by config/default
+resources:
+- bases/vpc.sdncontroller.io_vpcs.yaml
+- bases/vpc.sdncontroller.io_subnets.yaml
+- bases/gateway.sdncontroller.io_internetgateways.yaml
+- bases/gateway.sdncontroller.io_natgateways.yaml
+- bases/service.sdncontroller.io_loadbalancers.yaml
+- bases/service.sdncontroller.io_firewalls.yaml
+- bases/infra.sdncontroller.io_networkinterfaces.yaml
+- bases/infra.sdncontroller.io_bonds.yaml
+- bases/infra.sdncontroller.io_tunnels.yaml
+- bases/infra.sdncontroller.io_nodenetworkconfigs.yaml
+- bases/nfv.sdncontroller.io_servicechains.yaml
+- bases/nfv.sdncontroller.io_virtualnetworkfunctions.yaml
+# +kubebuilder:scaffold:crdkustomizeresource
+
+patches:
+# [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
+# patches here are for enabling the conversion webhook for each CRD
+# +kubebuilder:scaffold:crdkustomizewebhookpatch
+
+# [WEBHOOK] To enable webhook, uncomment the following section
+# the following config is for teaching kustomize how to do kustomization for CRDs.
+#configurations:
+#- kustomizeconfig.yaml
