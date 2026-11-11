@@ -1,230 +1,171 @@
-import { useState, useEffect, useCallback } from 'react';
-import { listResources } from '../api';
-import StatusBadge from '../components/StatusBadge';
+import { Link } from 'react-router-dom';
 import {
-  Network,
-  Layers,
-  Globe,
-  Shield,
-  Server,
-  GitBranch,
-  Loader2,
-  ArrowUpDown,
-  Cpu,
-  Cable,
-  Router,
-  Link2,
+  ArrowUpDown, Cable, Cpu, GitBranch, Globe, Layers, Link2, Network, Router, Server, Settings2, Shield,
+  type LucideIcon,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { listResources, queryRange } from '../api';
+import { useData } from '../context';
+import { RESOURCES, detailPath } from '../resources';
+import { age } from '../lib';
+import { ResourceStatus } from '../components/StatusBadge';
+import { Card, EntityLink, ErrorBanner, PageHeader } from '../components/ui';
+import { MetricChart, Sparkline, FORMATS, toPoints } from '../components/charts';
 
-interface ResourceTypeInfo {
-  type: string;
-  label: string;
-  icon: LucideIcon;
-  color: string;
-}
-
-const resourceTypes: ResourceTypeInfo[] = [
-  { type: 'vpcs', label: 'VPCs', icon: Network, color: 'text-blue-400 bg-blue-500/20' },
-  { type: 'subnets', label: 'Subnets', icon: Layers, color: 'text-purple-400 bg-purple-500/20' },
-  { type: 'internetgateways', label: 'Internet GWs', icon: Globe, color: 'text-orange-400 bg-orange-500/20' },
-  { type: 'natgateways', label: 'NAT GWs', icon: Router, color: 'text-amber-400 bg-amber-500/20' },
-  { type: 'loadbalancers', label: 'Load Balancers', icon: ArrowUpDown, color: 'text-yellow-400 bg-yellow-500/20' },
-  { type: 'firewalls', label: 'Firewalls', icon: Shield, color: 'text-red-400 bg-red-500/20' },
-  { type: 'tunnels', label: 'Tunnels', icon: GitBranch, color: 'text-teal-400 bg-teal-500/20' },
-  { type: 'bonds', label: 'Bonds', icon: Link2, color: 'text-cyan-400 bg-cyan-500/20' },
-  { type: 'networkinterfaces', label: 'NICs', icon: Cable, color: 'text-indigo-400 bg-indigo-500/20' },
-  { type: 'virtualnetworkfunctions', label: 'VNFs', icon: Server, color: 'text-green-400 bg-green-500/20' },
-  { type: 'servicechains', label: 'Service Chains', icon: Cpu, color: 'text-pink-400 bg-pink-500/20' },
+const TYPES: { type: string; label: string; to: string; icon: LucideIcon; color: string }[] = [
+  { type: 'vpcs', label: 'VPCs', to: '/vpcs', icon: Network, color: 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-500/20' },
+  { type: 'subnets', label: 'Subnets', to: '/subnets', icon: Layers, color: 'text-purple-600 bg-purple-100 dark:text-purple-400 dark:bg-purple-500/20' },
+  { type: 'internetgateways', label: 'Internet GWs', to: '/gateways', icon: Globe, color: 'text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-500/20' },
+  { type: 'natgateways', label: 'NAT GWs', to: '/gateways', icon: Router, color: 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-500/20' },
+  { type: 'loadbalancers', label: 'Load Balancers', to: '/services', icon: ArrowUpDown, color: 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-500/20' },
+  { type: 'firewalls', label: 'Firewalls', to: '/services', icon: Shield, color: 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-500/20' },
+  { type: 'servicechains', label: 'Service Chains', to: '/nfv', icon: Cpu, color: 'text-pink-600 bg-pink-100 dark:text-pink-400 dark:bg-pink-500/20' },
+  { type: 'virtualnetworkfunctions', label: 'VNFs', to: '/nfv', icon: Server, color: 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-500/20' },
+  { type: 'tunnels', label: 'Tunnels', to: '/infra', icon: GitBranch, color: 'text-teal-600 bg-teal-100 dark:text-teal-400 dark:bg-teal-500/20' },
+  { type: 'bonds', label: 'Bonds', to: '/infra', icon: Link2, color: 'text-cyan-600 bg-cyan-100 dark:text-cyan-400 dark:bg-cyan-500/20' },
+  { type: 'networkinterfaces', label: 'NICs', to: '/infra', icon: Cable, color: 'text-indigo-600 bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-500/20' },
+  { type: 'nodenetworkconfigs', label: 'Node Configs', to: '/infra', icon: Settings2, color: 'text-slate-600 bg-slate-200 dark:text-slate-300 dark:bg-slate-500/20' },
 ];
 
-interface ResourceCount {
-  type: string;
-  label: string;
-  icon: LucideIcon;
-  color: string;
-  count: number;
-  ready: number;
-  failed: number;
+const GOOD = ['Ready', 'Active', 'Running', 'Established', 'Configured'];
+const BAD = ['Failed', 'Error'];
+
+function classify(i: any): 'healthy' | 'degraded' | 'failed' | 'terminating' | 'pending' {
+  if (i.metadata?.deletionTimestamp) return 'terminating';
+  const p = i.status?.phase;
+  if (GOOD.includes(p)) return 'healthy';
+  if (BAD.includes(p)) return 'failed';
+  if (p === 'Degraded') return 'degraded';
+  return 'pending';
 }
 
 export default function Dashboard() {
-  const [counts, setCounts] = useState<ResourceCount[]>([]);
-  const [recentResources, setRecentResources] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, error } = useData(async () => {
+    const res = await Promise.allSettled(TYPES.map((t) => listResources(t.type)));
+    return TYPES.map((t, i) => ({ ...t, items: res[i].status === 'fulfilled' ? (res[i] as PromiseFulfilledResult<any[]>).value : [] }));
+  });
+  const spark = useData(async () => {
+    const q = (s: string) => queryRange(s, 1800, 30).then((r) => r.flatMap(toPoints)).catch(() => []);
+    const [recon, flows, tx, queue] = await Promise.all([
+      q('sum(rate(controller_runtime_reconcile_total[1m]))'),
+      q('sum(sdn_ovs_bridge_flows)'),
+      q('sum(rate(sdn_ovs_port_tx_bytes[1m]))'),
+      q('sum(workqueue_depth)'),
+    ]);
+    return { recon, flows, tx, queue };
+  });
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    try {
-      const results = await Promise.allSettled(
-        resourceTypes.map(async (rt) => {
-          const items = await listResources(rt.type);
-          return { ...rt, items };
-        })
-      );
+  const groups = data ?? [];
+  const all = groups.flatMap((g) => g.items.map((i) => ({ ...i, __resource: g.type })));
+  const health = { healthy: 0, degraded: 0, failed: 0, terminating: 0, pending: 0 };
+  all.forEach((i) => health[classify(i)]++);
+  const attention = all.filter((i) => classify(i) !== 'healthy');
+  const recent = [...all].sort((a, b) => (b.metadata?.creationTimestamp ?? '').localeCompare(a.metadata?.creationTimestamp ?? '')).slice(0, 8);
 
-      const allCounts: ResourceCount[] = [];
-      const allRecent: any[] = [];
-
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          const { items, ...info } = result.value;
-          const ready = items.filter(
-            (i: any) =>
-              i.status?.phase === 'Ready' ||
-              i.status?.phase === 'Active' ||
-              i.status?.phase === 'Running' ||
-              i.status?.phase === 'Established'
-          ).length;
-          const failed = items.filter(
-            (i: any) => i.status?.phase === 'Failed' || i.status?.phase === 'Error'
-          ).length;
-          allCounts.push({ ...info, count: items.length, ready, failed });
-          for (const item of items) {
-            allRecent.push({ ...item, _resourceType: info.type });
-          }
-        }
-      }
-
-      setCounts(allCounts);
-      setRecentResources(
-        allRecent
-          .sort(
-            (a, b) =>
-              new Date(b.metadata?.creationTimestamp ?? 0).getTime() -
-              new Date(a.metadata?.creationTimestamp ?? 0).getTime()
-          )
-          .slice(0, 10)
-      );
-    } catch {
-      // silently handle
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
-
-  const totalResources = counts.reduce((s, c) => s + c.count, 0);
-  const totalReady = counts.reduce((s, c) => s + c.ready, 0);
-  const totalFailed = counts.reduce((s, c) => s + c.failed, 0);
-
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-gray-400" />
-      </div>
-    );
-  }
+  const sparkCards: [string, string, any[], string][] = [
+    ['Reconciles / s', spark.data ? last(spark.data.recon).toFixed(2) : '-', spark.data?.recon ?? [], '#3b82f6'],
+    ['OVS flows', spark.data ? String(Math.round(last(spark.data.flows))) : '-', spark.data?.flows ?? [], '#22c55e'],
+    ['TX throughput', spark.data ? FORMATS.bps(last(spark.data.tx)) : '-', spark.data?.tx ?? [], '#f59e0b'],
+    ['Workqueue depth', spark.data ? String(Math.round(last(spark.data.queue))) : '-', spark.data?.queue ?? [], '#a855f7'],
+  ];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-100">Dashboard</h1>
-        <p className="text-sm text-gray-400">SDN Controller overview</p>
+      <PageHeader title="Dashboard" subtitle="Overview of your SDN infrastructure" />
+      <ErrorBanner message={error} />
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        {groups.map((g) => (
+          <Link key={g.type} to={g.to} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-blue-400 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-blue-500">
+            <div className="flex items-center justify-between">
+              <div className={`rounded-lg p-2 ${g.color}`}><g.icon className="h-5 w-5" /></div>
+              <span className="text-3xl font-bold text-gray-900 dark:text-gray-100">{g.items.length}</span>
+            </div>
+            <div className="mt-3 text-sm font-medium text-gray-600 dark:text-gray-300">{g.label}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {g.items.filter((i) => classify(i) === 'healthy').length} healthy
+              {g.items.some((i) => classify(i) !== 'healthy') && <span className="text-yellow-600 dark:text-yellow-400"> · {g.items.filter((i) => classify(i) !== 'healthy').length} attention</span>}
+            </div>
+          </Link>
+        ))}
+        {loading && groups.length === 0 && <div className="col-span-full text-gray-400">Loading…</div>}
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-gray-700 bg-gray-800 p-6">
-          <p className="text-sm font-medium text-gray-400">Total Resources</p>
-          <p className="mt-2 text-3xl font-bold text-gray-100">{totalResources}</p>
-        </div>
-        <div className="rounded-xl border border-gray-700 bg-gray-800 p-6">
-          <p className="text-sm font-medium text-gray-400">Healthy</p>
-          <p className="mt-2 text-3xl font-bold text-green-400">{totalReady}</p>
-        </div>
-        <div className="rounded-xl border border-gray-700 bg-gray-800 p-6">
-          <p className="text-sm font-medium text-gray-400">Failed</p>
-          <p className="mt-2 text-3xl font-bold text-red-400">{totalFailed}</p>
-        </div>
-      </div>
-
-      {/* Resource type cards */}
-      <div>
-        <h2 className="mb-4 text-lg font-semibold text-gray-100">Resources</h2>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-          {counts.map((rc) => (
-            <div
-              key={rc.type}
-              className="rounded-xl border border-gray-700 bg-gray-800 p-4 transition-colors hover:border-gray-600"
-            >
-              <div className="flex items-center gap-3">
-                <div className={`rounded-lg p-2 ${rc.color}`}>
-                  <rc.icon className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-100">{rc.count}</p>
-                  <p className="text-xs text-gray-400">{rc.label}</p>
-                </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card title="Health summary" bodyClass="p-5">
+          <div className="grid grid-cols-2 gap-3 text-center">
+            {([
+              ['Healthy', health.healthy, 'text-green-600 dark:text-green-400'],
+              ['Degraded', health.degraded, 'text-yellow-600 dark:text-yellow-400'],
+              ['Failed', health.failed, 'text-red-600 dark:text-red-400'],
+              ['Terminating', health.terminating, 'text-orange-600 dark:text-orange-400'],
+            ] as const).map(([l, n, c]) => (
+              <div key={l} className="rounded-lg bg-gray-50 py-3 dark:bg-gray-800/60">
+                <div className={`text-2xl font-bold ${c}`}>{n}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{l}</div>
               </div>
-              {rc.count > 0 && (
-                <div className="mt-3 flex gap-2 text-xs">
-                  <span className="text-green-400">{rc.ready} ready</span>
-                  {rc.failed > 0 && (
-                    <span className="text-red-400">{rc.failed} failed</span>
-                  )}
-                </div>
-              )}
+            ))}
+          </div>
+          <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+            {all.length > 0 && ([['healthy', '#22c55e'], ['degraded', '#eab308'], ['pending', '#9ca3af'], ['terminating', '#f97316'], ['failed', '#ef4444']] as const).map(([k, c]) => (
+              <div key={k} style={{ width: `${(health[k] / all.length) * 100}%`, background: c }} title={`${k}: ${health[k]}`} />
+            ))}
+          </div>
+          <div className="mt-4 text-sm">
+            {attention.length === 0 ? (
+              <span className="text-green-600 dark:text-green-400">All {all.length} resources healthy.</span>
+            ) : (
+              <>
+                <div className="mb-1 font-medium text-gray-700 dark:text-gray-300">Needs attention</div>
+                <ul className="space-y-1">
+                  {attention.slice(0, 6).map((i) => (
+                    <li key={`${i.__resource}/${i.metadata.namespace}/${i.metadata.name}`} className="flex items-center justify-between gap-2">
+                      <EntityLink resource={i.__resource} ns={i.metadata.namespace} name={i.metadata.name} />
+                      <ResourceStatus item={i} showBlockers={false} />
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card title="Live metrics (last 30m)" className="lg:col-span-2" bodyClass="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+          {sparkCards.map(([label, val, pts, color]) => (
+            <div key={label} className="flex items-center justify-between rounded-lg bg-gray-50 p-3 dark:bg-gray-800/60">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
+                <div className="text-xl font-bold text-gray-900 dark:text-gray-100">{val}</div>
+              </div>
+              <Sparkline points={pts} color={color} width={130} height={36} />
             </div>
           ))}
-        </div>
+          <div className="sm:col-span-2 text-right text-xs">
+            <Link to="/metrics" className="text-blue-600 hover:underline dark:text-blue-400">All metrics →</Link>
+          </div>
+        </Card>
       </div>
 
-      {/* Recent resources */}
-      <div>
-        <h2 className="mb-4 text-lg font-semibold text-gray-100">
-          Recent Resources
-        </h2>
-        <div className="overflow-hidden rounded-xl border border-gray-700 bg-gray-800">
-          {recentResources.length === 0 ? (
-            <div className="py-8 text-center text-gray-400">
-              No resources found
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-700 bg-gray-800/50">
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                      Type
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                      Namespace
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-700">
-                  {recentResources.map((r, i) => (
-                    <tr key={i} className="transition-colors hover:bg-gray-700/50">
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-100">
-                        {r.metadata?.name ?? '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-300">
-                        {r.kind ?? r._resourceType}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-300">
-                        {r.metadata?.namespace ?? '-'}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm">
-                        <StatusBadge phase={r.status?.phase} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <MetricChart title="Controller reconcile rate by controller (/s)" query="sum by (controller) (rate(controller_runtime_reconcile_total[1m]))" labelKey="controller" rangeSec={1800} />
+        <Card title="Recently created">
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+            {recent.map((i) => (
+              <li key={`${i.__resource}/${i.metadata.namespace}/${i.metadata.name}`} className="flex items-center justify-between px-5 py-2.5 text-sm">
+                <Link to={detailPath(i.__resource, i.metadata.namespace, i.metadata.name)} className="min-w-0 truncate hover:underline">
+                  <span className="text-gray-500 dark:text-gray-400">{RESOURCES[i.__resource].label} / </span>
+                  <span className="font-medium">{i.metadata.name}</span>
+                </Link>
+                <span className="flex items-center gap-3"><span className="text-xs text-gray-400">{age(i.metadata.creationTimestamp)}</span><ResourceStatus item={i} showBlockers={false} /></span>
+              </li>
+            ))}
+            {recent.length === 0 && <li className="px-5 py-6 text-center text-sm text-gray-400">No resources</li>}
+          </ul>
+        </Card>
       </div>
     </div>
   );
+}
+
+function last(pts: [number, number][]): number {
+  return pts.length ? pts[pts.length - 1][1] : 0;
 }

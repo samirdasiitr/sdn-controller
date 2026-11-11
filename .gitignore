@@ -35,3 +35,6 @@ testbin/
 
 # Temporary
 /tmp/
+
+/api-server
+/web-ui/dist/

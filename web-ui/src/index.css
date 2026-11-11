@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+/* reactflow theming */
+.react-flow__attribution { display: none; }
+html.dark .react-flow__controls button {
+  background: #1f2937;
+  color: #e5e7eb;
+  border-bottom-color: #374151;
+}
+html.dark .react-flow__controls button:hover { background: #374151; }
+html.dark .react-flow__controls button svg { fill: currentColor; }
+html.dark .react-flow__minimap { background: #111827; }
+html.dark .react-flow__edge-textbg { fill: #111827; }
+html.dark .react-flow__edge-text { fill: #9ca3af; }
+.react-flow__edge-text { font-size: 10px; }
+.react-flow__node-group {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
