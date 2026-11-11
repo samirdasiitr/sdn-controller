@@ -29,10 +29,16 @@ type Reconciler struct {
 	node string
 	ovs  *pkgovs.Client
 	log  *slog.Logger
+
+	counters map[string]*monoCounter  // cumulative counters that survive flow recreation
+	health   map[string]*backendState // LB backend probe state (router node)
+	lbSig    map[string]string        // LB backend-set signature, to flush learned affinity flows
+	applied  map[string]appliedState  // last programmed pipeline per bridge
 }
 
 func New(c client.Client, node string, ovs *pkgovs.Client, log *slog.Logger) *Reconciler {
-	return &Reconciler{c: c, node: node, ovs: ovs, log: log.With("component", "vpcattach")}
+	return &Reconciler{c: c, node: node, ovs: ovs, log: log.With("component", "vpcattach"),
+		counters: map[string]*monoCounter{}, health: map[string]*backendState{}, lbSig: map[string]string{}, applied: map[string]appliedState{}}
 }
 
 // Reconcile applies all VPCs. Errors for one VPC do not stop the others.
@@ -163,7 +169,7 @@ func (r *Reconciler) reconcileVPC(ctx context.Context, v *vpcv1alpha1.VPC) error
 
 	// Compile and install the pipeline: port security, firewalls, load balancers, NAT gateways.
 	bound := r.bindVNics(ctx, v, bridge, vpcSubnets)
-	if err := r.programPipeline(ctx, v, bridge, bound, wantPorts, cidrs); err != nil {
+	if err := r.programPipeline(ctx, v, bridge, bound, wantPorts, cidrs, isRouter); err != nil {
 		return err
 	}
 

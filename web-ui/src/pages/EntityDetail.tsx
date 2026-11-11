@@ -13,6 +13,7 @@ import FlowTable, { Explainer, portNamesFor } from '../components/FlowTable';
 import { ResourceStatus } from '../components/StatusBadge';
 import ResourceModal from '../components/ResourceModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { BackendHealth, CountersPanel, EnforcementWarnings, PerNodeEnforcement, RuleCounters } from '../components/Enforcement';
 import { MetricChart } from '../components/charts';
 import {
   Badge, Breadcrumb, Card, EntityLink, EntityLinks, ErrorBanner, KindRefLink, MiniTable, NodeLink,
@@ -238,6 +239,7 @@ function FirewallPanel({ item }: { item: any }) {
   const rules = [...(item.spec?.rules ?? [])].sort((a: any, b: any) => a.priority - b.priority);
   return (
     <>
+      <EnforcementWarnings item={item} />
       <Card title="Firewall">
         <Props items={[
           ['VPC', <EntityLink resource="vpcs" ns={ns} name={item.spec?.vpcRef} />],
@@ -248,6 +250,9 @@ function FirewallPanel({ item }: { item: any }) {
           ['Matched packets', item.status?.matchedPackets],
         ]} />
       </Card>
+      <CountersPanel kind="fw" item={item} />
+      <RuleCounters item={item} />
+      <PerNodeEnforcement kind="fw" item={item} />
       <Card title={`Rules (${rules.length})`}>
         <MiniTable
           rows={rules}
@@ -276,9 +281,11 @@ function LBPanel({ item }: { item: any }) {
   const backends: any[] = sp.backends ?? [];
   const totalW = backends.reduce((a, b) => a + (b.weight ?? 1), 0);
   const active = item.status?.activeBackends;
+  const { data: vnics } = useData(() => listResources('vnics', ns), [ns]);
   const health = active === undefined ? '-' : `${active} / ${backends.length} healthy`;
   return (
     <>
+      <EnforcementWarnings item={item} />
       <Card title="Load balancer">
         <Props items={[
           ['VPC', <EntityLink resource="vpcs" ns={ns} name={sp.vpcRef} />],
@@ -291,6 +298,9 @@ function LBPanel({ item }: { item: any }) {
           ['Session affinity', sp.sessionAffinity?.enabled ? `enabled (${sp.sessionAffinity.timeout ?? 'default'})` : undefined],
         ]} />
       </Card>
+      <CountersPanel kind="lb" item={item} />
+      <BackendHealth item={item} vnics={vnics ?? []} />
+      <PerNodeEnforcement kind="lb" item={item} />
       <Card title="Frontend ports">
         <MiniTable rows={sp.frontend?.ports ?? []} cols={[
           { header: 'VIP:Port', render: (p) => `${sp.frontend?.ip}:${p.port}` },
@@ -462,8 +472,10 @@ function GatewayPanel({ item, resource }: { item: any; resource: string }) {
   const sp = item.spec ?? {};
   const st = item.status ?? {};
   const nat = resource === 'natgateways';
+  const forwards: any[] = sp.portForwards ?? [];
   return (
     <>
+      {nat && <EnforcementWarnings item={item} />}
       <Card title={nat ? 'NAT gateway' : 'Internet gateway'}>
         <Props items={[
           ['VPC', <EntityLink resource="vpcs" ns={ns} name={sp.vpcRef} />],
@@ -477,6 +489,18 @@ function GatewayPanel({ item, resource }: { item: any; resource: string }) {
           ['Translations', st.translationCount],
         ]} />
       </Card>
+      {nat && <CountersPanel kind="nat" item={item} />}
+      {nat && (
+        <Card title={`Port forwards (${forwards.length})`}>
+          <MiniTable rows={forwards} empty={sp.type === 'SNAT' || !sp.type ? 'SNAT ignores port forwards' : 'No port forwards defined'} cols={[
+            { header: 'Name', render: (f) => f.name },
+            { header: 'Protocol', render: (f) => f.protocol },
+            { header: 'External', render: (f) => `${sp.externalIP}:${f.externalPort}` },
+            { header: 'Internal', render: (f) => `${f.internalIP}:${f.internalPort}` },
+          ]} />
+        </Card>
+      )}
+      {nat && <PerNodeEnforcement kind="nat" item={item} />}
       {nat && (
         <Card title="Attached subnets">
           <MiniTable rows={(sp.subnetRefs ?? []).map((n: string) => ({ n }))} empty="No subnets" cols={[

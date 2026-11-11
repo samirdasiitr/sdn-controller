@@ -126,6 +126,46 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              portForwards:
+                description: |-
+                  portForwards are the DNAT rules (external IP:port -> internal IP:port).
+                  Required for type DNAT and FullNAT.
+                items:
+                  description: PortForward publishes an internal endpoint on the gateway's
+                    external IP (DNAT).
+                  properties:
+                    externalPort:
+                      description: externalPort is the port on the external IP.
+                      format: int32
+                      maximum: 65535
+                      minimum: 1
+                      type: integer
+                    internalIP:
+                      description: internalIP is the target address inside the VPC.
+                      type: string
+                    internalPort:
+                      description: internalPort is the target port.
+                      format: int32
+                      maximum: 65535
+                      minimum: 1
+                      type: integer
+                    name:
+                      description: name is a human-readable name.
+                      type: string
+                    protocol:
+                      description: protocol is TCP or UDP.
+                      enum:
+                      - TCP
+                      - UDP
+                      type: string
+                  required:
+                  - externalPort
+                  - internalIP
+                  - internalPort
+                  - name
+                  - protocol
+                  type: object
+                type: array
               portRange:
                 description: portRange limits the ephemeral port range for translations.
                 properties:
@@ -239,6 +279,9 @@ spec:
                     EnforcementStatus is reported by each node agent after it programs its OVS
                     pipeline for this object. It is keyed by node name in status.enforcement.
                   properties:
+                    bytes:
+                      format: int64
+                      type: integer
                     flows:
                       description: flows is the number of OpenFlow rules installed
                         for this object on the node.
@@ -251,9 +294,19 @@ spec:
                     message:
                       description: message carries the error when programming failed.
                       type: string
+                    newTranslations:
+                      description: newTranslations is the cumulative number of translations
+                        created on the node.
+                      format: int64
+                      type: integer
                     observedGeneration:
                       description: observedGeneration is the spec generation the agent
                         compiled and installed.
+                      format: int64
+                      type: integer
+                    packets:
+                      description: packets and bytes are cumulative counters of the
+                        gateway's flows on the node.
                       format: int64
                       type: integer
                     programmed:
@@ -287,6 +340,11 @@ spec:
                 - Degraded
                 - Failed
                 type: string
+              totalTranslations:
+                description: totalTranslations is the cumulative number of translations
+                  created.
+                format: int64
+                type: integer
               translationCount:
                 description: translationCount is the number of active NAT translations.
                 format: int64

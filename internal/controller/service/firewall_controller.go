@@ -140,6 +140,7 @@ func (r *FirewallReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		warnings = append(warnings, e.Warnings...)
 	}
 	fw.Status.MatchedPackets = packets
+	fw.Status.RuleCounters = sumRuleCounters(fw.Status.Enforcement, fw.Spec.Rules)
 	done, waiting, errs := placement.Evaluate(nodes, fw.Generation, obs)
 	switch {
 	case len(nodes) == 0:
@@ -208,6 +209,29 @@ func dedupe(in []string) []string {
 		if !seen[x] {
 			seen[x] = true
 			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// sumRuleCounters adds the per-rule counters of all nodes, in rule priority order.
+func sumRuleCounters(enf map[string]servicev1alpha1.EnforcementStatus, rules []servicev1alpha1.FirewallRule) []servicev1alpha1.RuleCounter {
+	sum := map[string]servicev1alpha1.RuleCounter{}
+	for _, e := range enf {
+		for _, rc := range e.Rules {
+			s := sum[rc.Name]
+			s.Name, s.Action = rc.Name, rc.Action
+			s.Packets += rc.Packets
+			s.Bytes += rc.Bytes
+			sum[rc.Name] = s
+		}
+	}
+	sorted := append([]servicev1alpha1.FirewallRule(nil), rules...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Priority < sorted[j].Priority })
+	var out []servicev1alpha1.RuleCounter
+	for _, r := range sorted {
+		if rc, ok := sum[r.Name]; ok {
+			out = append(out, rc)
 		}
 	}
 	return out

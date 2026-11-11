@@ -19,6 +19,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -114,6 +115,30 @@ func (r *NATGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if natType == "" {
 		natType = gatewayv1alpha1.NATTypeSNAT
 	}
+	if natType == gatewayv1alpha1.NATTypeDNAT || natType == gatewayv1alpha1.NATTypeFullNAT {
+		if len(natgw.Spec.PortForwards) == 0 {
+			r.setCondition(&natgw, "NATConfigured", metav1.ConditionFalse, "NoPortForwards",
+				fmt.Sprintf("type %s needs spec.portForwards", natType))
+			natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseFailed
+			_ = r.Status().Update(ctx, &natgw)
+			return ctrl.Result{}, nil
+		}
+		seen := map[string]bool{}
+		for _, pf := range natgw.Spec.PortForwards {
+			k := fmt.Sprintf("%s/%d", pf.Protocol, pf.ExternalPort)
+			if net.ParseIP(pf.InternalIP) == nil || seen[k] {
+				msg := fmt.Sprintf("port forward %q: invalid internalIP %q", pf.Name, pf.InternalIP)
+				if seen[k] {
+					msg = fmt.Sprintf("port forward %q: %s is forwarded twice", pf.Name, k)
+				}
+				r.setCondition(&natgw, "NATConfigured", metav1.ConditionFalse, "InvalidPortForward", msg)
+				natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseFailed
+				_ = r.Status().Update(ctx, &natgw)
+				return ctrl.Result{}, nil
+			}
+			seen[k] = true
+		}
+	}
 	r.setCondition(&natgw, "NATConfigured", metav1.ConditionTrue, "Configured",
 		fmt.Sprintf("NAT type %s configured with external IP %s", natType, natgw.Spec.ExternalIP))
 
@@ -144,9 +169,6 @@ func (r *NATGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Ready only when the active node's agent has programmed this generation.
 	e, ok := natgw.Status.Enforcement[active]
 	switch {
-	case natType != gatewayv1alpha1.NATTypeSNAT && ok && e.ObservedGeneration == natgw.Generation && !e.Programmed:
-		natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseFailed
-		r.setCondition(&natgw, "Ready", metav1.ConditionFalse, "NotImplemented", e.Message)
 	case !ok || e.ObservedGeneration != natgw.Generation:
 		natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseProvisioning
 		r.setCondition(&natgw, "Ready", metav1.ConditionFalse, "WaitingForAgent", fmt.Sprintf("waiting for the agent on %s to program SNAT", active))
@@ -155,13 +177,21 @@ func (r *NATGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		r.setCondition(&natgw, "Ready", metav1.ConditionFalse, "ProgrammingFailed", e.Message)
 	default:
 		natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseReady
-		msg := fmt.Sprintf("SNAT %v -> %s programmed in OVS on %s", natgw.Spec.SubnetRefs, natgw.Spec.ExternalIP, active)
+		msg := fmt.Sprintf("%s %v via %s programmed in OVS on %s", natType, natgw.Spec.SubnetRefs, natgw.Spec.ExternalIP, active)
+		if len(natgw.Spec.PortForwards) > 0 {
+			msg += fmt.Sprintf(" (%d port forward(s))", len(natgw.Spec.PortForwards))
+		}
 		if len(e.Warnings) > 0 {
 			msg += " (warnings: " + strings.Join(e.Warnings, "; ") + ")"
 		}
 		r.setCondition(&natgw, "Ready", metav1.ConditionTrue, "Programmed", msg)
 	}
 	natgw.Status.TranslationCount = e.Translations
+	var totalTr int64
+	for _, en := range natgw.Status.Enforcement {
+		totalTr += en.NewTranslations
+	}
+	natgw.Status.TotalTranslations = totalTr
 
 	if err := r.Status().Update(ctx, &natgw); err != nil {
 		return ctrl.Result{}, err

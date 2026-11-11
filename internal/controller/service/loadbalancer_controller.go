@@ -135,14 +135,31 @@ func (r *LoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		r.setCondition(&lb, "Placed", metav1.ConditionTrue, "Placed", fmt.Sprintf("scheduled on %v", nodes))
 	}
 	obs := map[string]placement.Observed{}
-	var conns int64
+	var active, total int64
 	var warnings []string
 	for n, e := range lb.Status.Enforcement {
 		obs[n] = placement.Observed{Generation: e.ObservedGeneration, Programmed: e.Programmed, Message: e.Message}
-		conns += e.Connections
+		active += e.Connections
+		total += e.NewConnections
 		warnings = append(warnings, e.Warnings...)
 	}
-	lb.Status.TotalConnections = conns
+	lb.Status.ActiveConnections, lb.Status.TotalConnections = active, total
+	healthy := int32(0)
+	unhealthy := []string{}
+	known := map[string]bool{}
+	for _, b := range lb.Status.Backends {
+		known[b.IP] = true
+		if b.Healthy {
+			healthy++
+		} else {
+			unhealthy = append(unhealthy, b.IP)
+		}
+	}
+	for _, b := range lb.Spec.Backends {
+		if !known[b.IP] {
+			healthy++ // not probed yet: assumed healthy
+		}
+	}
 	done, waiting, errs := placement.Evaluate(nodes, lb.Generation, obs)
 	switch {
 	case len(nodes) == 0:
@@ -156,8 +173,15 @@ func (r *LoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		r.setCondition(&lb, "Ready", metav1.ConditionFalse, "WaitingForAgents",
 			fmt.Sprintf("programmed on %d/%d nodes, waiting for %v", len(done), len(nodes), waiting))
 	default:
-		lb.Status.Phase, lb.Status.ActiveBackends = servicev1alpha1.LBPhaseReady, int32(len(lb.Spec.Backends))
-		msg := fmt.Sprintf("VIP %s programmed in OVS on %d node(s)", lb.Spec.Frontend.IP, len(done))
+		lb.Status.Phase, lb.Status.ActiveBackends = servicev1alpha1.LBPhaseReady, healthy
+		msg := fmt.Sprintf("VIP %s programmed in OVS on %d node(s), %d/%d backends healthy", lb.Spec.Frontend.IP, len(done), healthy, len(lb.Spec.Backends))
+		if len(unhealthy) > 0 {
+			lb.Status.Phase = servicev1alpha1.LBPhaseDegraded
+			msg += fmt.Sprintf(", unhealthy: %v", unhealthy)
+		}
+		if healthy == 0 {
+			msg += " (all backends unhealthy: traffic fails open to all)"
+		}
 		if len(warnings) > 0 {
 			msg += " (warnings: " + strings.Join(dedupe(warnings), "; ") + ")"
 		}

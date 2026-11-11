@@ -117,6 +117,14 @@ type FirewallSpec struct {
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 }
 
+// RuleCounter is the cumulative traffic matched by one firewall rule.
+type RuleCounter struct {
+	Name    string `json:"name"`
+	Action  string `json:"action"`
+	Packets int64  `json:"packets"`
+	Bytes   int64  `json:"bytes"`
+}
+
 // EnforcementStatus is reported by each node agent after it programs its OVS
 // pipeline for this object. It is keyed by node name in status.enforcement.
 type EnforcementStatus struct {
@@ -133,6 +141,17 @@ type EnforcementStatus struct {
 	// connections is the number of connections currently tracked on the node (load balancers).
 	// +optional
 	Connections int64 `json:"connections,omitempty"`
+	// newConnections is the cumulative number of connections load-balanced on the node.
+	// +optional
+	NewConnections int64 `json:"newConnections,omitempty"`
+	// packets and bytes are cumulative counters of the object's main flows on the node.
+	// +optional
+	Packets int64 `json:"packets,omitempty"`
+	// +optional
+	Bytes int64 `json:"bytes,omitempty"`
+	// rules are cumulative per-rule counters on the node (firewalls).
+	// +optional
+	Rules []RuleCounter `json:"rules,omitempty"`
 	// message carries the error when programming failed.
 	// +optional
 	Message string `json:"message,omitempty"`
@@ -168,6 +187,12 @@ type FirewallStatus struct {
 	// activeRules is the number of installed rules.
 	// +optional
 	ActiveRules int32 `json:"activeRules,omitempty"`
+
+	// ruleCounters are the per-rule counters summed over all nodes.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	RuleCounters []RuleCounter `json:"ruleCounters,omitempty"`
 
 	// matchedPackets is the total matched packet count.
 	// +optional

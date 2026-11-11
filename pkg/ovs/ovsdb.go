@@ -243,3 +243,45 @@ func (c *Client) ConntrackCount(ctx context.Context, zone int) int64 {
 	}
 	return int64(len(strings.Split(out, "\n")))
 }
+
+// ReplaceTables atomically replaces the flows of the given tables only (one bundle), leaving
+// every other table untouched. Used so flows learned at runtime (session affinity) survive
+// reprogramming of the rest of the pipeline.
+func (c *Client) ReplaceTables(ctx context.Context, bridge string, tables []int, flows []string) error {
+	var b strings.Builder
+	for _, t := range tables {
+		fmt.Fprintf(&b, "delete table=%d\n", t)
+	}
+	for _, f := range flows {
+		b.WriteString(f + "\n")
+	}
+	cmd := exec.CommandContext(ctx, c.ovsOfctl, "--bundle", "-O", "OpenFlow15", "add-flows", bridge, "-")
+	cmd.Stdin = strings.NewReader(b.String())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ovs-ofctl add-flows %s: %w (output: %s)", bridge, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// DeleteFlowsMatching deletes flows matching a spec in one table, e.g. "table=18,ip,nw_dst=10.0.0.100".
+func (c *Client) DeleteFlowsMatching(ctx context.Context, bridge, match string) error {
+	return c.run(ctx, c.ovsOfctl, "-O", "OpenFlow15", "del-flows", bridge, match)
+}
+
+var ctReplySrcRe = regexp.MustCompile(`reply=\(src=([0-9.]+)`)
+
+// ConntrackByReplySrc counts tracked connections in a zone grouped by the reply-direction
+// source address, which is the backend IP for DNAT'ed load-balancer connections.
+func (c *Client) ConntrackByReplySrc(ctx context.Context, zone int) map[string]int64 {
+	res := map[string]int64{}
+	out, err := c.runOutput(ctx, "ovs-appctl", "dpctl/dump-conntrack", fmt.Sprintf("zone=%d", zone))
+	if err != nil {
+		return res
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if m := ctReplySrcRe.FindStringSubmatch(l); m != nil {
+			res[m[1]]++
+		}
+	}
+	return res
+}

@@ -253,6 +253,39 @@ spec:
                 description: activeBackends is the number of healthy backends.
                 format: int32
                 type: integer
+              activeConnections:
+                description: activeConnections is the number of connections currently
+                  tracked, summed over nodes.
+                format: int64
+                type: integer
+              backends:
+                description: backends is the health of each backend.
+                items:
+                  description: BackendStatus is the observed health of one backend,
+                    written by the router node's prober.
+                  properties:
+                    healthy:
+                      description: healthy is false after unhealthyThreshold consecutive
+                        failed checks.
+                      type: boolean
+                    ip:
+                      description: ip of the backend.
+                      type: string
+                    mac:
+                      description: mac is the backend's MAC when it is not a VNic
+                        (learned from the router node's ARP cache).
+                      type: string
+                    message:
+                      description: message explains an unhealthy backend.
+                      type: string
+                  required:
+                  - healthy
+                  - ip
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - ip
+                x-kubernetes-list-type: map
               conditions:
                 description: conditions represent the current state.
                 items:
@@ -319,6 +352,9 @@ spec:
                     EnforcementStatus is reported by each node agent after it programs its OVS
                     pipeline for this object. It is keyed by node name in status.enforcement.
                   properties:
+                    bytes:
+                      format: int64
+                      type: integer
                     connections:
                       description: connections is the number of connections currently
                         tracked on the node (load balancers).
@@ -337,15 +373,49 @@ spec:
                     message:
                       description: message carries the error when programming failed.
                       type: string
+                    newConnections:
+                      description: newConnections is the cumulative number of connections
+                        load-balanced on the node.
+                      format: int64
+                      type: integer
                     observedGeneration:
                       description: observedGeneration is the spec generation the agent
                         compiled and installed.
+                      format: int64
+                      type: integer
+                    packets:
+                      description: packets and bytes are cumulative counters of the
+                        object's main flows on the node.
                       format: int64
                       type: integer
                     programmed:
                       description: programmed is true when the flows for this generation
                         are installed.
                       type: boolean
+                    rules:
+                      description: rules are cumulative per-rule counters on the node
+                        (firewalls).
+                      items:
+                        description: RuleCounter is the cumulative traffic matched
+                          by one firewall rule.
+                        properties:
+                          action:
+                            type: string
+                          bytes:
+                            format: int64
+                            type: integer
+                          name:
+                            type: string
+                          packets:
+                            format: int64
+                            type: integer
+                        required:
+                        - action
+                        - bytes
+                        - name
+                        - packets
+                        type: object
+                      type: array
                     warnings:
                       description: warnings are non-fatal limitations (e.g. health
                         checks not implemented).
@@ -376,7 +446,8 @@ spec:
                 - Failed
                 type: string
               totalConnections:
-                description: totalConnections is the cumulative connection count.
+                description: totalConnections is the cumulative number of connections
+                  load-balanced (all nodes).
                 format: int64
                 type: integer
             type: object

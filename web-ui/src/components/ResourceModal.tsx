@@ -99,12 +99,12 @@ function FieldInput({
   switch (field.type) {
     case 'text':
       return (
-        <input className={inputCls} value={value ?? ''} required={required} disabled={disabled} placeholder={field.placeholder}
+        <input className={inputCls} value={value ?? ''} required={required} disabled={disabled} placeholder={field.placeholder} pattern={field.pattern} title={field.pattern ? 'Invalid format' : undefined}
           onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)} />
       );
     case 'number':
       return (
-        <input type="number" className={inputCls} value={value ?? ''} required={required} disabled={disabled} placeholder={field.placeholder}
+        <input type="number" min={field.min} max={field.max} className={inputCls} value={value ?? ''} required={required} disabled={disabled} placeholder={field.placeholder}
           onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))} />
       );
     case 'select': {
@@ -294,6 +294,11 @@ export default function ResourceModal({ resource, target, open, onClose, onSaved
       for (const f of form.fields) {
         if (f.stripWhenHidden && f.showIf && !f.showIf(out)) out = setIn(out, f.path, undefined);
       }
+    }
+    const verr = form.validate?.(out);
+    if (verr) {
+      setError(verr);
+      return;
     }
     out = { ...out, apiVersion: out.apiVersion ?? meta.apiVersion, kind: out.kind ?? meta.kind };
     if (edit && fetched) {

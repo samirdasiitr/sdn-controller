@@ -173,6 +173,20 @@ const (
 	LBPhaseFailed       LBPhase = "Failed"
 )
 
+// BackendStatus is the observed health of one backend, written by the router node's prober.
+type BackendStatus struct {
+	// ip of the backend.
+	IP string `json:"ip"`
+	// healthy is false after unhealthyThreshold consecutive failed checks.
+	Healthy bool `json:"healthy"`
+	// mac is the backend's MAC when it is not a VNic (learned from the router node's ARP cache).
+	// +optional
+	MAC string `json:"mac,omitempty"`
+	// message explains an unhealthy backend.
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
 // LoadBalancerStatus defines the observed state of LoadBalancer.
 type LoadBalancerStatus struct {
 	// enforcement is what each node agent actually programmed, keyed by node name.
@@ -191,7 +205,17 @@ type LoadBalancerStatus struct {
 	// +optional
 	ActiveBackends int32 `json:"activeBackends,omitempty"`
 
-	// totalConnections is the cumulative connection count.
+	// backends is the health of each backend.
+	// +listType=map
+	// +listMapKey=ip
+	// +optional
+	Backends []BackendStatus `json:"backends,omitempty"`
+
+	// activeConnections is the number of connections currently tracked, summed over nodes.
+	// +optional
+	ActiveConnections int64 `json:"activeConnections,omitempty"`
+
+	// totalConnections is the cumulative number of connections load-balanced (all nodes).
 	// +optional
 	TotalConnections int64 `json:"totalConnections,omitempty"`
 

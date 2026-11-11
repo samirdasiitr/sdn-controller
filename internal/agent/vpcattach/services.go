@@ -2,10 +2,13 @@ package vpcattach
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -29,7 +32,7 @@ func contains(l []string, s string) bool {
 
 // programPipeline compiles the services of the VPC for this node, installs them atomically
 // and reports what was programmed back to each object's status.
-func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, bridge string, bound []pipeline.Port, tunnelPortNames map[string]bool, cidrs []string) error {
+func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, bridge string, bound []pipeline.Port, tunnelPortNames map[string]bool, cidrs []string, isRouter bool) error {
 	var fws servicev1alpha1.FirewallList
 	var lbs servicev1alpha1.LoadBalancerList
 	var nats gwv1alpha1.NATGatewayList
@@ -110,7 +113,73 @@ func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, br
 	}
 	in.Firewalls, in.LBs, in.NATs = myFWs, myLBs, myNATs
 
+	// Runtime state for load balancers: published backend health/MACs, live connection counts.
+	vnicIPs := map[string]bool{}
+	for ip := range in.IPToMAC {
+		vnicIPs[ip] = true
+	}
+	var vpcLBs []servicev1alpha1.LoadBalancer
+	for _, lb := range lbs.Items {
+		if lb.Spec.VPCRef == v.Name && lb.DeletionTimestamp.IsZero() {
+			vpcLBs = append(vpcLBs, lb)
+		}
+	}
+	if isRouter {
+		r.probeBackends(ctx, bridge, vpcLBs, vnicIPs)
+	}
+	in.SubnetGateways = map[string]string{}
+	for _, sn := range subnets.Items {
+		if sn.Spec.VPCRef == v.Name && sn.Status.Gateway != "" {
+			in.SubnetGateways[sn.Name] = sn.Status.Gateway
+		}
+	}
+	in.LBRuntime = map[string]pipeline.LBRuntime{}
+	for _, lb := range myLBs {
+		rt := pipeline.LBRuntime{Health: map[string]bool{}, MACs: map[string]string{}}
+		for _, bs := range lb.Status.Backends {
+			rt.Health[bs.IP] = bs.Healthy
+			if bs.MAC != "" {
+				rt.MACs[bs.IP] = bs.MAC
+			}
+		}
+		in.LBRuntime[pipeline.ReportKey("LoadBalancer", lb.Namespace, lb.Name)] = rt
+	}
 	out := pipeline.Build(in)
+	// LeastConn needs the live per-backend connection counts, which need the zone numbers.
+	needConns := false
+	for _, lb := range myLBs {
+		needConns = needConns || lb.Spec.Algorithm == servicev1alpha1.LBAlgorithmLeastConn
+	}
+	if needConns {
+		for _, lb := range myLBs {
+			key := pipeline.ReportKey("LoadBalancer", lb.Namespace, lb.Name)
+			if z, ok := out.LBZones[key]; ok && lb.Spec.Algorithm == servicev1alpha1.LBAlgorithmLeastConn {
+				rt := in.LBRuntime[key]
+				rt.Conns = r.ovs.ConntrackByReplySrc(ctx, z)
+				in.LBRuntime[key] = rt
+			}
+		}
+		out = pipeline.Build(in)
+	}
+
+	// Learned session-affinity flows pin clients to backend indexes; drop them when the backend set changes.
+	for _, lb := range myLBs {
+		if lb.Spec.SessionAffinity == nil || !lb.Spec.SessionAffinity.Enabled {
+			continue
+		}
+		key := pipeline.ReportKey("LoadBalancer", lb.Namespace, lb.Name)
+		var sig []string
+		for _, be := range pipeline.LBBackendOrder(lb) {
+			h, ok := in.LBRuntime[key].Health[be.IP]
+			sig = append(sig, fmt.Sprintf("%s/%d/%v", be.IP, be.Weight, !ok || h))
+		}
+		cur := strings.Join(sig, ",")
+		if old, seen := r.lbSig[key]; seen && old != cur {
+			r.log.Info("backend set changed, flushing session affinity", "lb", lb.Name)
+			_ = r.ovs.DeleteFlowsMatching(ctx, bridge, "table=18,ip,nw_dst="+lb.Spec.Frontend.IP)
+		}
+		r.lbSig[key] = cur
+	}
 
 	groups := map[int]string{}
 	for _, g := range out.Groups {
@@ -121,8 +190,15 @@ func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, br
 		if err != nil {
 			return fmt.Errorf("programming groups: %w", err)
 		}
-		if err := r.ovs.ReplaceFlows(ctx, bridge, out.Flows); err != nil {
-			return err
+		// Recreating flows resets their counters, so only reprogram when the compiled pipeline
+		// changed, plus a periodic resync that heals manual drift.
+		sum := sha256.Sum256([]byte(strings.Join(out.Flows, "\n")))
+		sig := hex.EncodeToString(sum[:])
+		if last, ok := r.applied[bridge]; !ok || last.sig != sig || time.Since(last.at) > 5*time.Minute {
+			if err := r.ovs.ReplaceTables(ctx, bridge, pipelineTables, out.Flows); err != nil {
+				return err
+			}
+			r.applied[bridge] = appliedState{sig: sig, at: time.Now()}
 		}
 		return prune()
 	}()
@@ -131,65 +207,162 @@ func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, br
 	}
 
 	r.hostNAT(ctx, v, bridge, myNATs, applyErr == nil)
-
-	// Report enforcement and counters back to each object.
-	var flowStats []ovsinfo.Flow
-	if applyErr == nil {
-		flowStats, _ = ovsinfo.GetFlows(ctx, bridge)
-	}
-	pkts := map[string]int64{}
-	for _, f := range flowStats {
-		var ck uint64
-		fmt.Sscanf(f.Cookie, "0x%x", &ck)
-		if ref, ok := out.Cookies[ck]; ok && ref.Kind == "Firewall" {
-			pkts[pipeline.ReportKey(ref.Kind, ref.Namespace, ref.Name)] += f.Packets
-		}
-	}
-	for i := range myFWs {
-		fw := &myFWs[i]
-		rep := out.Reports[pipeline.ReportKey("Firewall", fw.Namespace, fw.Name)]
-		orig := fw.DeepCopy()
-		if fw.Status.Enforcement == nil {
-			fw.Status.Enforcement = map[string]servicev1alpha1.EnforcementStatus{}
-		}
-		fw.Status.Enforcement[r.node] = enforcement(fw.Generation, rep, applyErr, pkts[pipeline.ReportKey("Firewall", fw.Namespace, fw.Name)], 0)
-		r.patchStatus(ctx, fw, orig, reflect.DeepEqual(orig.Status.Enforcement[r.node], fw.Status.Enforcement[r.node]))
-	}
-	for i := range myLBs {
-		lb := &myLBs[i]
-		key := pipeline.ReportKey("LoadBalancer", lb.Namespace, lb.Name)
-		var conns int64
-		if z, ok := out.LBZones[key]; ok && applyErr == nil {
-			conns = r.ovs.ConntrackCount(ctx, z)
-		}
-		orig := lb.DeepCopy()
-		if lb.Status.Enforcement == nil {
-			lb.Status.Enforcement = map[string]servicev1alpha1.EnforcementStatus{}
-		}
-		lb.Status.Enforcement[r.node] = enforcement(lb.Generation, out.Reports[key], applyErr, 0, conns)
-		r.patchStatus(ctx, lb, orig, reflect.DeepEqual(orig.Status.Enforcement[r.node], lb.Status.Enforcement[r.node]))
-	}
-	for i := range myNATs {
-		n := &myNATs[i]
-		key := pipeline.ReportKey("NATGateway", n.Namespace, n.Name)
-		var tr int64
-		if z, ok := out.NATZones[key]; ok && applyErr == nil {
-			tr = r.ovs.ConntrackCount(ctx, z)
-		}
-		e := enforcement(n.Generation, out.Reports[key], applyErr, 0, 0)
-		orig := n.DeepCopy()
-		if n.Status.Enforcement == nil {
-			n.Status.Enforcement = map[string]gwv1alpha1.EnforcementStatus{}
-		}
-		n.Status.Enforcement[r.node] = gwv1alpha1.EnforcementStatus{ObservedGeneration: e.ObservedGeneration, Programmed: e.Programmed,
-			Flows: e.Flows, Translations: tr, Message: e.Message, Warnings: e.Warnings}
-		r.patchStatus(ctx, n, orig, reflect.DeepEqual(orig.Status.Enforcement[r.node], n.Status.Enforcement[r.node]))
-	}
+	r.reportEnforcement(ctx, bridge, out, myFWs, myLBs, myNATs, applyErr)
 	return applyErr
 }
 
-func enforcement(gen int64, rep *pipeline.Report, applyErr error, packets, conns int64) servicev1alpha1.EnforcementStatus {
-	e := servicev1alpha1.EnforcementStatus{ObservedGeneration: gen, MatchedPackets: packets, Connections: conns}
+// pipelineTables are replaced on every reconcile; table 18 (learned affinity flows) is not.
+var pipelineTables = []int{0, 5, 10, 15, 16, 17, 19, 20, 21, 22, 23, 25, 30, 40}
+
+type appliedState struct {
+	sig string
+	at  time.Time
+}
+
+type monoCounter struct{ base, last int64 }
+
+// mono turns a resettable flow counter into a cumulative one: when the raw value goes down (flows
+// were recreated) the previous value is folded into the base, and on first sight the base is
+// seeded from the value already reported in status so agent restarts do not reset or double count.
+func (r *Reconciler) mono(key string, raw, seed int64) int64 {
+	m := r.counters[key]
+	if m == nil {
+		base := seed - raw
+		if base < 0 {
+			base = 0
+		}
+		m = &monoCounter{base: base}
+		r.counters[key] = m
+	}
+	if raw < m.last {
+		m.base += m.last
+	}
+	m.last = raw
+	return m.base + raw
+}
+
+type agg struct{ packets, bytes int64 }
+
+func (r *Reconciler) reportEnforcement(ctx context.Context, bridge string, out pipeline.Output,
+	fws []servicev1alpha1.Firewall, lbs []servicev1alpha1.LoadBalancer, nats []gwv1alpha1.NATGateway, applyErr error) {
+	// Sum the flow counters of each object by cookie.
+	rule := map[string]map[string]agg{} // fw key -> "rule|action" -> counters
+	traffic := map[string]agg{}         // lb/nat key -> main traffic counters
+	newConns := map[string]int64{}      // lb/nat key -> new connections/translations
+	if applyErr == nil {
+		flows, _ := ovsinfo.GetFlows(ctx, bridge)
+		for _, f := range flows {
+			var ck uint64
+			fmt.Sscanf(f.Cookie, "0x%x", &ck)
+			ref, ok := out.Cookies[ck]
+			if !ok {
+				continue
+			}
+			key := pipeline.ReportKey(ref.Kind, ref.Namespace, ref.Name)
+			switch {
+			case ref.Kind == "Firewall":
+				if rule[key] == nil {
+					rule[key] = map[string]agg{}
+				}
+				a := rule[key][ref.Rule+"|"+ref.Action]
+				a.packets += f.Packets
+				a.bytes += f.Bytes
+				rule[key][ref.Rule+"|"+ref.Action] = a
+			case ref.Rule == "connections" || ref.Rule == "translations":
+				newConns[key] += f.Packets
+			default:
+				a := traffic[key]
+				a.packets += f.Packets
+				a.bytes += f.Bytes
+				traffic[key] = a
+			}
+		}
+	}
+	for i := range fws {
+		fw := &fws[i]
+		key := pipeline.ReportKey("Firewall", fw.Namespace, fw.Name)
+		orig := fw.DeepCopy()
+		prev := orig.Status.Enforcement[r.node]
+		prevRules := map[string]servicev1alpha1.RuleCounter{}
+		for _, rc := range prev.Rules {
+			prevRules[rc.Name] = rc
+		}
+		e := enforcement(fw.Generation, out.Reports[key], applyErr)
+		var total int64
+		var names []string
+		for k := range rule[key] {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			name, action, _ := strings.Cut(k, "|")
+			a := rule[key][k]
+			pk := prevRules[name]
+			rc := servicev1alpha1.RuleCounter{Name: name, Action: action,
+				Packets: r.mono("fw/"+key+"/"+name+"/p", a.packets, pk.Packets), Bytes: r.mono("fw/"+key+"/"+name+"/b", a.bytes, pk.Bytes)}
+			total += rc.Packets
+			e.Rules = append(e.Rules, rc)
+		}
+		e.MatchedPackets = total
+		if applyErr != nil {
+			e.Rules, e.MatchedPackets = prev.Rules, prev.MatchedPackets
+		}
+		if fw.Status.Enforcement == nil {
+			fw.Status.Enforcement = map[string]servicev1alpha1.EnforcementStatus{}
+		}
+		fw.Status.Enforcement[r.node] = e
+		r.patchStatus(ctx, fw, orig, reflect.DeepEqual(orig.Status.Enforcement[r.node], e))
+	}
+	for i := range lbs {
+		lb := &lbs[i]
+		key := pipeline.ReportKey("LoadBalancer", lb.Namespace, lb.Name)
+		orig := lb.DeepCopy()
+		prev := orig.Status.Enforcement[r.node]
+		e := enforcement(lb.Generation, out.Reports[key], applyErr)
+		if applyErr == nil {
+			if z, ok := out.LBZones[key]; ok {
+				e.Connections = r.ovs.ConntrackCount(ctx, z)
+			}
+			e.NewConnections = r.mono("lb/"+key+"/n", newConns[key], prev.NewConnections)
+			e.Packets = r.mono("lb/"+key+"/p", traffic[key].packets, prev.Packets)
+			e.Bytes = r.mono("lb/"+key+"/b", traffic[key].bytes, prev.Bytes)
+		} else {
+			e.NewConnections, e.Packets, e.Bytes = prev.NewConnections, prev.Packets, prev.Bytes
+		}
+		if lb.Status.Enforcement == nil {
+			lb.Status.Enforcement = map[string]servicev1alpha1.EnforcementStatus{}
+		}
+		lb.Status.Enforcement[r.node] = e
+		r.patchStatus(ctx, lb, orig, reflect.DeepEqual(orig.Status.Enforcement[r.node], e))
+	}
+	for i := range nats {
+		n := &nats[i]
+		key := pipeline.ReportKey("NATGateway", n.Namespace, n.Name)
+		orig := n.DeepCopy()
+		prev := orig.Status.Enforcement[r.node]
+		se := enforcement(n.Generation, out.Reports[key], applyErr)
+		e := gwv1alpha1.EnforcementStatus{ObservedGeneration: se.ObservedGeneration, Programmed: se.Programmed,
+			Flows: se.Flows, Message: se.Message, Warnings: se.Warnings}
+		if applyErr == nil {
+			if z, ok := out.NATZones[key]; ok {
+				e.Translations = r.ovs.ConntrackCount(ctx, z) + r.ovs.ConntrackCount(ctx, z+30)
+			}
+			e.NewTranslations = r.mono("nat/"+key+"/n", newConns[key], prev.NewTranslations)
+			e.Packets = r.mono("nat/"+key+"/p", traffic[key].packets, prev.Packets)
+			e.Bytes = r.mono("nat/"+key+"/b", traffic[key].bytes, prev.Bytes)
+		} else {
+			e.NewTranslations, e.Packets, e.Bytes = prev.NewTranslations, prev.Packets, prev.Bytes
+		}
+		if n.Status.Enforcement == nil {
+			n.Status.Enforcement = map[string]gwv1alpha1.EnforcementStatus{}
+		}
+		n.Status.Enforcement[r.node] = e
+		r.patchStatus(ctx, n, orig, reflect.DeepEqual(orig.Status.Enforcement[r.node], e))
+	}
+}
+
+func enforcement(gen int64, rep *pipeline.Report, applyErr error) servicev1alpha1.EnforcementStatus {
+	e := servicev1alpha1.EnforcementStatus{ObservedGeneration: gen}
 	if rep != nil {
 		e.Flows, e.Warnings = int32(rep.Flows), rep.Warnings
 	}
@@ -221,9 +394,6 @@ func (r *Reconciler) hostNAT(ctx context.Context, v *vpcv1alpha1.VPC, bridge str
 	want := map[string]bool{}
 	if ok {
 		for _, n := range nats {
-			if t := n.Spec.Type; t != "" && t != gwv1alpha1.NATTypeSNAT {
-				continue
-			}
 			want[n.Spec.ExternalIP] = true
 			_ = sh(ctx, "ip", "route", "replace", n.Spec.ExternalIP+"/32", "dev", bridge, "proto", natRouteProto)
 			_ = sh(ctx, "ip", "neigh", "replace", n.Spec.ExternalIP, "lladdr", pipeline.VIPMAC(n.Spec.ExternalIP), "dev", bridge, "nud", "permanent")

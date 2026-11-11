@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { deleteResource, friendlyError, listResources } from '../api';
 import { useData, useRefresh } from '../context';
 import { RESOURCES, detailPath } from '../resources';
-import { age } from '../lib';
+import { age, fmtNum } from '../lib';
 import { hasTag, parseTagParam, tagStr, type Tag } from '../tags';
 import ResourceTable, { type Column } from './ResourceTable';
 import ResourceModal from './ResourceModal';
@@ -73,15 +73,26 @@ export const COLUMNS: Record<string, Column[]> = {
   ],
   natgateways: [
     nameCol, nsCol, vpcCol, subnetsCol,
-    { key: 'spec.externalIP', header: 'External IP' },
-    { key: 'spec.type', header: 'Type' },
+    { key: 'spec.type', header: 'Type', render: (i) => i.spec?.type ?? 'SNAT' },
+    { key: 'spec.externalIP', header: 'Ext IP' },
+    { key: 'forwards', header: 'Forwards', render: (i) => (['DNAT', 'FullNAT'].includes(i.spec?.type) ? i.spec?.portForwards?.length ?? 0 : '-') },
+    { key: 'status.activeNode', header: 'Active node', render: (i) => <NodeLink name={i.status?.activeNode} /> },
+    { key: 'status.translationCount', header: 'Translations (active / total)', render: (i) => `${fmtNum(i.status?.translationCount ?? 0)} / ${fmtNum(i.status?.totalTranslations ?? 0)}` },
     runsOnCol('natgateways'), statusCol,
   ],
   loadbalancers: [
     nameCol, nsCol, vpcCol,
     { key: 'vip', header: 'VIP', render: (i) => `${i.spec?.frontend?.ip ?? '-'}${i.spec?.frontend?.ports?.length ? ':' + i.spec.frontend.ports.map((p: any) => p.port).join(',') : ''}` },
     { key: 'spec.algorithm', header: 'Algorithm' },
-    { key: 'backends', header: 'Backends', render: (i) => `${i.status?.activeBackends ?? '?'} / ${i.spec?.backends?.length ?? 0}` },
+    {
+      key: 'backends', header: 'Backends healthy/total',
+      render: (i) => {
+        const sb: any[] | undefined = i.status?.backends;
+        if (sb?.length) return `${sb.filter((b) => b.healthy).length} / ${sb.length}`;
+        return `? / ${i.spec?.backends?.length ?? 0}`;
+      },
+    },
+    { key: 'status.activeConnections', header: 'Connections (active / total)', render: (i) => `${fmtNum(i.status?.activeConnections ?? 0)} / ${fmtNum(i.status?.totalConnections ?? 0)}` },
     runsOnCol('loadbalancers'), statusCol,
   ],
   firewalls: [

@@ -24,6 +24,9 @@ export interface FieldDef {
   rows?: FieldDef[];
   newRow?: () => any;
   readOnlyOnEdit?: boolean;
+  pattern?: string;
+  min?: number;
+  max?: number;
 }
 
 const nodeSelector: FieldDef = {
@@ -36,7 +39,29 @@ const vpcRef: FieldDef = { path: 'spec.vpcRef', label: 'VPC', type: 'select', op
 const TUNNELS = ['VXLAN', 'IPIP', 'GRE'];
 const needsVNI = (o: any) => (o?.spec?.tunnelType ?? 'VXLAN') !== 'IPIP';
 
-export const FORMS: Record<string, { fields: FieldDef[]; defaults?: any }> = {
+const IPV4 = /^((25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(25[0-5]|2[0-4]\d|1?\d?\d)$/;
+const validPort = (n: any) => Number.isInteger(n) && n >= 1 && n <= 65535;
+const needsForwards = (o: any) => ['DNAT', 'FullNAT'].includes(o?.spec?.type);
+
+function validateNAT(o: any): string | null {
+  const sp = o?.spec ?? {};
+  if (sp.portRange && (!validPort(sp.portRange.start) || !validPort(sp.portRange.end) || sp.portRange.start > sp.portRange.end))
+    return 'Port range must be 1-65535 with start <= end';
+  if (!needsForwards(o)) return null;
+  const pf: any[] = sp.portForwards ?? [];
+  if (pf.length === 0) return `${sp.type} requires at least one port forward`;
+  for (const [i, r] of pf.entries()) {
+    const n = `Port forward #${i + 1}`;
+    if (!r.name) return `${n}: name is required`;
+    if (!['TCP', 'UDP'].includes(r.protocol)) return `${n}: protocol must be TCP or UDP`;
+    if (!validPort(r.externalPort)) return `${n}: external port must be 1-65535`;
+    if (!r.internalIP || !IPV4.test(r.internalIP)) return `${n}: internal IP must be a valid IPv4 address`;
+    if (!validPort(r.internalPort)) return `${n}: internal port must be 1-65535`;
+  }
+  return null;
+}
+
+export const FORMS: Record<string, { fields: FieldDef[]; defaults?: any; validate?: (o: any) => string | null }> = {
   vpcs: {
     defaults: { spec: { cidr: '10.0.0.0/16', tunnelType: 'VXLAN', mtu: 1450 } },
     fields: [
@@ -81,6 +106,7 @@ export const FORMS: Record<string, { fields: FieldDef[]; defaults?: any }> = {
     ],
   },
   natgateways: {
+    validate: validateNAT,
     defaults: { spec: { type: 'SNAT' } },
     fields: [
       vpcRef,
@@ -89,6 +115,23 @@ export const FORMS: Record<string, { fields: FieldDef[]; defaults?: any }> = {
       { path: 'spec.type', label: 'NAT type', type: 'select', options: ['SNAT', 'DNAT', 'FullNAT'] },
       { path: 'spec.portRange.start', label: 'Port range start', type: 'number' },
       { path: 'spec.portRange.end', label: 'Port range end', type: 'number' },
+      {
+        path: 'spec.portForwards',
+        label: 'Port forwards',
+        type: 'rows',
+        required: needsForwards,
+        showIf: needsForwards,
+        stripWhenHidden: true,
+        help: 'DNAT/FullNAT: external port on the gateway IP forwarded to internal IP:port.',
+        newRow: () => ({ name: '', protocol: 'TCP', externalPort: 80, internalIP: '', internalPort: 80 }),
+        rows: [
+          { path: 'name', label: 'Name', type: 'text', required: true, placeholder: 'web' },
+          { path: 'protocol', label: 'Protocol', type: 'select', options: ['TCP', 'UDP'], required: true },
+          { path: 'externalPort', label: 'External port', type: 'number', required: true, min: 1, max: 65535 },
+          { path: 'internalIP', label: 'Internal IP', type: 'text', required: true, placeholder: '10.0.1.10', pattern: '((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])' },
+          { path: 'internalPort', label: 'Internal port', type: 'number', required: true, min: 1, max: 65535 },
+        ],
+      },
       { path: 'spec.ha.enabled', label: 'HA enabled', type: 'checkbox' },
       { path: 'spec.ha.mode', label: 'HA mode', type: 'select', options: ['ActiveStandby', 'ActiveActive'], showIf: (o) => !!o?.spec?.ha?.enabled },
       nodeSelector,

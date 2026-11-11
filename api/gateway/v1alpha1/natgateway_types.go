@@ -43,6 +43,25 @@ type PortRange struct {
 	End int32 `json:"end"`
 }
 
+// PortForward publishes an internal endpoint on the gateway's external IP (DNAT).
+type PortForward struct {
+	// name is a human-readable name.
+	Name string `json:"name"`
+	// protocol is TCP or UDP.
+	// +kubebuilder:validation:Enum=TCP;UDP
+	Protocol string `json:"protocol"`
+	// externalPort is the port on the external IP.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	ExternalPort int32 `json:"externalPort"`
+	// internalIP is the target address inside the VPC.
+	InternalIP string `json:"internalIP"`
+	// internalPort is the target port.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	InternalPort int32 `json:"internalPort"`
+}
+
 // NATGatewaySpec defines the desired state of NATGateway.
 type NATGatewaySpec struct {
 	// vpcRef is the name of the VPC this NAT gateway serves.
@@ -61,6 +80,11 @@ type NATGatewaySpec struct {
 	// +kubebuilder:default=SNAT
 	// +optional
 	Type NATType `json:"type,omitempty"`
+
+	// portForwards are the DNAT rules (external IP:port -> internal IP:port).
+	// Required for type DNAT and FullNAT.
+	// +optional
+	PortForwards []PortForward `json:"portForwards,omitempty"`
 
 	// portRange limits the ephemeral port range for translations.
 	// +optional
@@ -88,6 +112,14 @@ type EnforcementStatus struct {
 	// matchedPackets is unused for gateways.
 	// +optional
 	MatchedPackets int64 `json:"matchedPackets,omitempty"`
+	// newTranslations is the cumulative number of translations created on the node.
+	// +optional
+	NewTranslations int64 `json:"newTranslations,omitempty"`
+	// packets and bytes are cumulative counters of the gateway's flows on the node.
+	// +optional
+	Packets int64 `json:"packets,omitempty"`
+	// +optional
+	Bytes int64 `json:"bytes,omitempty"`
 	// translations is the number of active NAT translations on the node.
 	// +optional
 	Translations int64 `json:"translations,omitempty"`
@@ -107,6 +139,10 @@ type NATGatewayStatus struct {
 
 	// phase is the current lifecycle phase.
 	Phase GatewayPhase `json:"phase,omitempty"`
+
+	// totalTranslations is the cumulative number of translations created.
+	// +optional
+	TotalTranslations int64 `json:"totalTranslations,omitempty"`
 
 	// translationCount is the number of active NAT translations.
 	// +optional
