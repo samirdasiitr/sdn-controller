@@ -128,6 +128,11 @@ const (
 
 // VirtualNetworkFunctionStatus defines the observed state of VirtualNetworkFunction.
 type VirtualNetworkFunctionStatus struct {
+	// nodes lists the hosts this resource is running on (Ready nodes matching
+	// nodeSelector that are attached to the VPC).
+	// +optional
+	Nodes []string `json:"nodes,omitempty"`
+
 	// phase is the current lifecycle phase.
 	Phase VNFPhase `json:"phase,omitempty"`
 

@@ -91,7 +91,11 @@ func (r *Reconciler) reconcileVPC(ctx context.Context, v *vpcv1alpha1.VPC) error
 	}
 	var cidrs []string
 	wantAddrs := map[string]bool{}
+	vpcSubnets := map[string]bool{}
 	for _, sn := range subnets.Items {
+		if sn.Spec.VPCRef == v.Name {
+			vpcSubnets[sn.Name] = true
+		}
 		if sn.Spec.VPCRef != v.Name || sn.Status.Phase != vpcv1alpha1.SubnetPhaseReady || sn.Status.Gateway == "" {
 			continue
 		}
@@ -160,6 +164,7 @@ func (r *Reconciler) reconcileVPC(ctx context.Context, v *vpcv1alpha1.VPC) error
 	for _, d := range dests {
 		flows = append(flows, fmt.Sprintf("priority=100,ip,nw_dst=%s,actions=NORMAL", d))
 	}
+	flows = append(flows, r.bindVNics(ctx, v, bridge, vpcSubnets)...)
 	flows = append(flows, "priority=0,actions=NORMAL")
 	if err := r.ovs.ReplaceFlows(ctx, bridge, flows); err != nil {
 		return err

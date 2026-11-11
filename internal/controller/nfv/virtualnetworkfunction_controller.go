@@ -19,6 +19,7 @@ package nfv
 import (
 	"context"
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
 	"time"
 
 	"github.com/sdncontroller/sdncontroller/internal/deps"
@@ -31,6 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	nfvv1alpha1 "github.com/sdncontroller/sdncontroller/api/nfv/v1alpha1"
+	"github.com/sdncontroller/sdncontroller/internal/placement"
 )
 
 const virtualNetworkFunctionFinalizer = "virtualnetworkfunction.sdncontroller.io/finalizer"
@@ -122,6 +124,16 @@ func (r *VirtualNetworkFunctionReconciler) Reconcile(ctx context.Context, req ct
 	vnf.Status.ReadyReplicas = vnf.Spec.Replicas
 
 	// Mark Running
+	if nodes, err := placement.Nodes(ctx, r.Client, vnf.Namespace, "", vnf.Spec.NodeSelector); err != nil {
+		return ctrl.Result{}, err
+	} else {
+		vnf.Status.Nodes = nodes
+		if len(nodes) == 0 {
+			r.setCondition(&vnf, "Placed", metav1.ConditionFalse, "NoEligibleNodes", "no Ready node matches nodeSelector and VPC attachment")
+		} else {
+			r.setCondition(&vnf, "Placed", metav1.ConditionTrue, "Placed", fmt.Sprintf("running on %v", nodes))
+		}
+	}
 	vnf.Status.Phase = nfvv1alpha1.VNFPhaseRunning
 	r.setCondition(&vnf, "Ready", metav1.ConditionTrue, "Running",
 		fmt.Sprintf("VNF running: %d/%d replicas ready", vnf.Status.ReadyReplicas, vnf.Spec.Replicas))
@@ -170,6 +182,7 @@ func (r *VirtualNetworkFunctionReconciler) setCondition(vnf *nfvv1alpha1.Virtual
 func (r *VirtualNetworkFunctionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nfvv1alpha1.VirtualNetworkFunction{}).
+		Watches(&corev1.Node{}, placement.All(r.Client, func() client.ObjectList { return &nfvv1alpha1.VirtualNetworkFunctionList{} })).
 		Named("nfv-virtualnetworkfunction").
 		Complete(r)
 }

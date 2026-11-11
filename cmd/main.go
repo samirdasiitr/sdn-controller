@@ -214,6 +214,14 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Subnet")
 		os.Exit(1)
 	}
+	if err := (&vpccontroller.VNicReconciler{
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		IPAMManager: ipamManager,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "VNic")
+		os.Exit(1)
+	}
 	if err := (&gatewaycontroller.InternetGatewayReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

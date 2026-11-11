@@ -33,6 +33,7 @@ import (
 
 	servicev1alpha1 "github.com/sdncontroller/sdncontroller/api/service/v1alpha1"
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
+	"github.com/sdncontroller/sdncontroller/internal/placement"
 )
 
 const firewallFinalizer = "firewall.sdncontroller.io/finalizer"
@@ -122,6 +123,16 @@ func (r *FirewallReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	fw.Status.ActiveRules = int32(len(fw.Spec.Rules))
 
 	// Mark Active
+	if nodes, err := placement.Nodes(ctx, r.Client, fw.Namespace, fw.Spec.VPCRef, fw.Spec.NodeSelector); err != nil {
+		return ctrl.Result{}, err
+	} else {
+		fw.Status.Nodes = nodes
+		if len(nodes) == 0 {
+			r.setCondition(&fw, "Placed", metav1.ConditionFalse, "NoEligibleNodes", "no Ready node matches nodeSelector and VPC attachment")
+		} else {
+			r.setCondition(&fw, "Placed", metav1.ConditionTrue, "Placed", fmt.Sprintf("running on %v", nodes))
+		}
+	}
 	fw.Status.Phase = servicev1alpha1.FirewallPhaseActive
 	r.setCondition(&fw, "Ready", metav1.ConditionTrue, "Active",
 		fmt.Sprintf("Firewall active with %d rule(s), default action: %s", fw.Status.ActiveRules, fw.Spec.DefaultAction))
@@ -161,6 +172,7 @@ func (r *FirewallReconciler) setCondition(fw *servicev1alpha1.Firewall, condType
 func (r *FirewallReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&servicev1alpha1.Firewall{}).
+		Watches(&vpcv1alpha1.VPC{}, placement.ByVPC(r.Client, func() client.ObjectList { return &servicev1alpha1.FirewallList{} }, func(o client.Object) string { return o.(*servicev1alpha1.Firewall).Spec.VPCRef })).
 		Named("service-firewall").
 		Complete(r)
 }

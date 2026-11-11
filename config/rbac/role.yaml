@@ -149,6 +149,7 @@ rules:
   - vpc.sdncontroller.io
   resources:
   - subnets
+  - vnics
   - vpcs
   verbs:
   - create
@@ -162,6 +163,7 @@ rules:
   - vpc.sdncontroller.io
   resources:
   - subnets/finalizers
+  - vnics/finalizers
   - vpcs/finalizers
   verbs:
   - update
@@ -169,6 +171,7 @@ rules:
   - vpc.sdncontroller.io
   resources:
   - subnets/status
+  - vnics/status
   - vpcs/status
   verbs:
   - get

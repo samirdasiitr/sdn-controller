@@ -18,6 +18,7 @@ type kindInfo struct {
 
 var referrers = []kindInfo{
 	{"vpc.sdncontroller.io", "Subnet"},
+	{"vpc.sdncontroller.io", "VNic"},
 	{"gateway.sdncontroller.io", "InternetGateway"},
 	{"gateway.sdncontroller.io", "NATGateway"},
 	{"service.sdncontroller.io", "LoadBalancer"},

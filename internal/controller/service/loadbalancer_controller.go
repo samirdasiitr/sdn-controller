@@ -33,6 +33,7 @@ import (
 
 	servicev1alpha1 "github.com/sdncontroller/sdncontroller/api/service/v1alpha1"
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
+	"github.com/sdncontroller/sdncontroller/internal/placement"
 )
 
 const loadBalancerFinalizer = "loadbalancer.sdncontroller.io/finalizer"
@@ -124,6 +125,16 @@ func (r *LoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		fmt.Sprintf("%d backend(s) validated", lb.Status.ActiveBackends))
 
 	// Mark Ready
+	if nodes, err := placement.Nodes(ctx, r.Client, lb.Namespace, lb.Spec.VPCRef, lb.Spec.NodeSelector); err != nil {
+		return ctrl.Result{}, err
+	} else {
+		lb.Status.Nodes = nodes
+		if len(nodes) == 0 {
+			r.setCondition(&lb, "Placed", metav1.ConditionFalse, "NoEligibleNodes", "no Ready node matches nodeSelector and VPC attachment")
+		} else {
+			r.setCondition(&lb, "Placed", metav1.ConditionTrue, "Placed", fmt.Sprintf("running on %v", nodes))
+		}
+	}
 	lb.Status.Phase = servicev1alpha1.LBPhaseReady
 	r.setCondition(&lb, "Ready", metav1.ConditionTrue, "Provisioned", "LoadBalancer is ready")
 
@@ -162,6 +173,7 @@ func (r *LoadBalancerReconciler) setCondition(lb *servicev1alpha1.LoadBalancer, 
 func (r *LoadBalancerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&servicev1alpha1.LoadBalancer{}).
+		Watches(&vpcv1alpha1.VPC{}, placement.ByVPC(r.Client, func() client.ObjectList { return &servicev1alpha1.LoadBalancerList{} }, func(o client.Object) string { return o.(*servicev1alpha1.LoadBalancer).Spec.VPCRef })).
 		Named("service-loadbalancer").
 		Complete(r)
 }

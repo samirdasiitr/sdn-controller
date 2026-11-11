@@ -129,6 +129,11 @@ const (
 
 // FirewallStatus defines the observed state of Firewall.
 type FirewallStatus struct {
+	// nodes lists the hosts this resource is running on (Ready nodes matching
+	// nodeSelector that are attached to the VPC).
+	// +optional
+	Nodes []string `json:"nodes,omitempty"`
+
 	// phase is the current lifecycle phase.
 	Phase FirewallPhase `json:"phase,omitempty"`
 

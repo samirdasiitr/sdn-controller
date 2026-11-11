@@ -19,6 +19,7 @@ package vpc
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -28,7 +29,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
 	"github.com/sdncontroller/sdncontroller/internal/deps"
@@ -49,6 +52,7 @@ type SubnetReconciler struct {
 // +kubebuilder:rbac:groups=vpc.sdncontroller.io,resources=subnets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vpc.sdncontroller.io,resources=subnets/finalizers,verbs=update
 // +kubebuilder:rbac:groups=vpc.sdncontroller.io,resources=vpcs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=vpc.sdncontroller.io,resources=vnics,verbs=get;list;watch
 
 func (r *SubnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -147,6 +151,19 @@ func (r *SubnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 
+	// Restore VNic allocations (pools live in memory and are lost on restart).
+	var vnics vpcv1alpha1.VNicList
+	if err := r.List(ctx, &vnics, client.InNamespace(subnet.Namespace)); err != nil {
+		return ctrl.Result{}, err
+	}
+	for _, vn := range vnics.Items {
+		if vn.Spec.SubnetRef == subnet.Name && vn.Status.IPAddress != "" && vn.DeletionTimestamp.IsZero() {
+			if ip := net.ParseIP(vn.Status.IPAddress); ip != nil {
+				_ = alloc.AllocateSpecific(ip, vnicOwner(&vn))
+			}
+		}
+	}
+
 	subnet.Status.Gateway = alloc.Gateway().String()
 	subnet.Status.AllocatedIPs = alloc.AllocatedCount()
 	subnet.Status.AvailableIPs = alloc.AvailableCount()
@@ -197,8 +214,16 @@ func (r *SubnetReconciler) setCondition(subnet *vpcv1alpha1.Subnet, condType str
 }
 
 func (r *SubnetReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	vnicToSubnet := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		vn, ok := o.(*vpcv1alpha1.VNic)
+		if !ok {
+			return nil
+		}
+		return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: vn.Spec.SubnetRef, Namespace: vn.Namespace}}}
+	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&vpcv1alpha1.Subnet{}).
+		Watches(&vpcv1alpha1.VNic{}, vnicToSubnet).
 		Named("vpc-subnet").
 		Complete(r)
 }

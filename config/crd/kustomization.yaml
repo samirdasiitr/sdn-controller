@@ -4,6 +4,7 @@
 resources:
 - bases/vpc.sdncontroller.io_vpcs.yaml
 - bases/vpc.sdncontroller.io_subnets.yaml
+- bases/vpc.sdncontroller.io_vnics.yaml
 - bases/gateway.sdncontroller.io_internetgateways.yaml
 - bases/gateway.sdncontroller.io_natgateways.yaml
 - bases/service.sdncontroller.io_loadbalancers.yaml

@@ -32,6 +32,7 @@ import (
 
 	nfvv1alpha1 "github.com/sdncontroller/sdncontroller/api/nfv/v1alpha1"
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
+	"github.com/sdncontroller/sdncontroller/internal/placement"
 )
 
 const serviceChainFinalizer = "servicechain.sdncontroller.io/finalizer"
@@ -117,6 +118,16 @@ func (r *ServiceChainReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	sc.Status.ChainLength = int32(len(sc.Spec.Chain))
 
 	// Mark Active
+	if nodes, err := placement.Nodes(ctx, r.Client, sc.Namespace, sc.Spec.VPCRef, sc.Spec.NodeSelector); err != nil {
+		return ctrl.Result{}, err
+	} else {
+		sc.Status.Nodes = nodes
+		if len(nodes) == 0 {
+			r.setCondition(&sc, "Placed", metav1.ConditionFalse, "NoEligibleNodes", "no Ready node matches nodeSelector and VPC attachment")
+		} else {
+			r.setCondition(&sc, "Placed", metav1.ConditionTrue, "Placed", fmt.Sprintf("running on %v", nodes))
+		}
+	}
 	sc.Status.Phase = nfvv1alpha1.ServiceChainPhaseActive
 	r.setCondition(&sc, "Ready", metav1.ConditionTrue, "Active",
 		fmt.Sprintf("Service chain active with %d hop(s)", sc.Status.ChainLength))
@@ -156,6 +167,7 @@ func (r *ServiceChainReconciler) setCondition(sc *nfvv1alpha1.ServiceChain, cond
 func (r *ServiceChainReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nfvv1alpha1.ServiceChain{}).
+		Watches(&vpcv1alpha1.VPC{}, placement.ByVPC(r.Client, func() client.ObjectList { return &nfvv1alpha1.ServiceChainList{} }, func(o client.Object) string { return o.(*nfvv1alpha1.ServiceChain).Spec.VPCRef })).
 		Named("nfv-servicechain").
 		Complete(r)
 }
