@@ -1,0 +1,208 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 100, "title": "OVS Node Summary", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 }, "id": 1,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_ovs_bridge_total", "legendFormat": "{{ node }}", "refId": "A" }],
+      "title": "Total Bridges", "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.5 }] }, "mappings": [{ "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }] } },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 }, "id": 2,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_ovs_daemon_up{daemon=\"ovs-vswitchd\"}", "legendFormat": "ovs-vswitchd", "refId": "A" }],
+      "title": "ovs-vswitchd", "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.5 }] }, "mappings": [{ "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }] } },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 }, "id": 3,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_ovs_daemon_up{daemon=\"ovsdb-server\"}", "legendFormat": "ovsdb-server", "refId": "A" }],
+      "title": "ovsdb-server", "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 }, "id": 4,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sum(sdn_ovs_bridge_ports)", "legendFormat": "Total Ports", "refId": "A" }],
+      "title": "Total Ports", "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "purple", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 }, "id": 5,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sum(sdn_ovs_bridge_flows)", "legendFormat": "Total Flows", "refId": "A" }],
+      "title": "Total Flow Rules", "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "orange", "value": null }] }, "unit": "Bps" } },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 }, "id": 6,
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sum(rate(sdn_ovs_port_rx_bytes[1m])) + sum(rate(sdn_ovs_port_tx_bytes[1m]))", "legendFormat": "Total", "refId": "A" }],
+      "title": "Total Throughput", "type": "stat"
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "id": 101, "title": "Per-Bridge Status", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Status" }, "properties": [{ "id": "custom.displayMode", "value": "color-text" }, { "id": "mappings", "value": [{ "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }] }] }
+        ]
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 6 }, "id": 10,
+      "options": { "showHeader": true },
+      "targets": [{ "expr": "sdn_ovs_bridge_up", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Bridge Status", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["node", "bridge", "Value"] } } },
+        { "id": "organize", "options": { "renameByName": { "Value": "Status" } } }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "displayMode": "auto" } } },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 6 }, "id": 11,
+      "options": { "showHeader": true },
+      "targets": [{ "expr": "sdn_ovs_bridge_ports", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Ports per Bridge", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["node", "bridge", "Value"] } } },
+        { "id": "organize", "options": { "renameByName": { "Value": "Ports" } } }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "displayMode": "auto" } } },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 6 }, "id": 12,
+      "options": { "showHeader": true },
+      "targets": [{ "expr": "sdn_ovs_bridge_flows", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Flow Rules per Bridge", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["node", "bridge", "Value"] } } },
+        { "id": "organize", "options": { "renameByName": { "Value": "Flows" } } }
+      ]
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 11 }, "id": 102, "title": "Flow Rules per Table", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisBorderShow": false, "fillOpacity": 80, "gradientMode": "none", "stacking": { "mode": "normal" }, "showValue": "auto" }, "unit": "short" }
+      },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 12 }, "id": 13,
+      "options": { "barRadius": 0.05, "barWidth": 0.7, "groupWidth": 0.7, "legend": { "calcs": [], "displayMode": "list", "placement": "right", "showLegend": true }, "orientation": "horizontal", "showValue": "auto", "stacking": "normal", "tooltip": { "mode": "multi" } },
+      "targets": [{ "expr": "sdn_ovs_table_flows", "format": "table", "instant": true, "refId": "A" }],
+      "title": "OpenFlow Rules by Bridge & Table", "type": "barchart",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["bridge", "table", "Value"] } } },
+        { "id": "organize", "options": { "renameByName": { "Value": "Flows" } } }
+      ]
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 }, "id": 103, "title": "Port Throughput (bytes/sec)", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 20, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "Bps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 }, "id": 20,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "rate(sdn_ovs_port_rx_bytes[1m])", "legendFormat": "{{ bridge }}/{{ port }} RX", "refId": "A" }],
+      "title": "Port RX Bytes/sec", "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 20, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "Bps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 }, "id": 21,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "rate(sdn_ovs_port_tx_bytes[1m])", "legendFormat": "{{ bridge }}/{{ port }} TX", "refId": "A" }],
+      "title": "Port TX Bytes/sec", "type": "timeseries"
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 }, "id": 104, "title": "Port Packets/sec", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 20, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "pps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 }, "id": 30,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "rate(sdn_ovs_port_rx_packets[1m])", "legendFormat": "{{ bridge }}/{{ port }} RX", "refId": "A" }],
+      "title": "Port RX Packets/sec", "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 20, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "pps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 }, "id": 31,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "rate(sdn_ovs_port_tx_packets[1m])", "legendFormat": "{{ bridge }}/{{ port }} TX", "refId": "A" }],
+      "title": "Port TX Packets/sec", "type": "timeseries"
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 }, "id": 105, "title": "Drops & Errors", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 20, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "pps" },
+        "overrides": [{ "matcher": { "id": "byRegexp", "options": ".*" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 }, "id": 40,
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "rate(sdn_ovs_port_rx_drops[1m]) > 0", "legendFormat": "{{ bridge }}/{{ port }} RX drop", "refId": "A" },
+        { "expr": "rate(sdn_ovs_port_tx_drops[1m]) > 0", "legendFormat": "{{ bridge }}/{{ port }} TX drop", "refId": "B" }
+      ],
+      "title": "Port Drops/sec", "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 20, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "pps" },
+        "overrides": [{ "matcher": { "id": "byRegexp", "options": ".*" }, "properties": [{ "id": "color", "value": { "fixedColor": "dark-red", "mode": "fixed" } }] }]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 }, "id": 41,
+      "options": { "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "rate(sdn_ovs_port_rx_errors[1m]) > 0", "legendFormat": "{{ bridge }}/{{ port }} RX err", "refId": "A" },
+        { "expr": "rate(sdn_ovs_port_tx_errors[1m]) > 0", "legendFormat": "{{ bridge }}/{{ port }} TX err", "refId": "B" }
+      ],
+      "title": "Port Errors/sec", "type": "timeseries"
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 }, "id": 106, "title": "Port Detail Table", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "unit": "bytes" }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 47 }, "id": 50,
+      "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "RX Bytes" }] },
+      "targets": [
+        { "expr": "sdn_ovs_port_rx_bytes", "format": "table", "instant": true, "refId": "A" },
+        { "expr": "sdn_ovs_port_tx_bytes", "format": "table", "instant": true, "refId": "B" },
+        { "expr": "sdn_ovs_port_rx_packets", "format": "table", "instant": true, "refId": "C" },
+        { "expr": "sdn_ovs_port_tx_packets", "format": "table", "instant": true, "refId": "D" },
+        { "expr": "sdn_ovs_port_rx_drops", "format": "table", "instant": true, "refId": "E" },
+        { "expr": "sdn_ovs_port_tx_drops", "format": "table", "instant": true, "refId": "F" }
+      ],
+      "title": "All Port Statistics", "type": "table",
+      "transformations": [
+        { "id": "seriesToColumns", "options": { "byField": "port" } },
+        { "id": "organize", "options": {
+          "excludeByName": { "Time 1": true, "Time 2": true, "Time 3": true, "Time 4": true, "Time 5": true, "Time 6": true, "__name__ 1": true, "__name__ 2": true, "__name__ 3": true, "__name__ 4": true, "__name__ 5": true, "__name__ 6": true, "instance 1": true, "instance 2": true, "instance 3": true, "instance 4": true, "instance 5": true, "instance 6": true, "job 1": true, "job 2": true, "job 3": true, "job 4": true, "job 5": true, "job 6": true, "node 2": true, "node 3": true, "node 4": true, "node 5": true, "node 6": true, "bridge 2": true, "bridge 3": true, "bridge 4": true, "bridge 5": true, "bridge 6": true, "ofport 2": true, "ofport 3": true, "ofport 4": true, "ofport 5": true, "ofport 6": true },
+          "renameByName": { "node 1": "Node", "bridge 1": "Bridge", "port": "Port", "ofport 1": "OFPort", "Value #A": "RX Bytes", "Value #B": "TX Bytes", "Value #C": "RX Pkts", "Value #D": "TX Pkts", "Value #E": "RX Drops", "Value #F": "TX Drops" }
+        }}
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["sdn", "ovs", "dataplane"],
+  "time": { "from": "now-30m", "to": "now" },
+  "title": "SDN OVS Dataplane",
+  "uid": "sdn-ovs",
+  "version": 1
+}

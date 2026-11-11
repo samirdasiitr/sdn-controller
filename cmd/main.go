@@ -293,6 +293,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start OVS metrics collector (scrapes OVS state every 10s)
+	nodeName := os.Getenv("NODE_NAME")
+	if nodeName == "" {
+		nodeName, _ = os.Hostname()
+	}
+	ovsUseSudo := os.Getenv("OVS_USE_SUDO") != "false"
+	ovsCollector := telemetry.NewOVSCollector(10*time.Second, nodeName, ovsUseSudo)
+	if err := mgr.Add(ovsCollector); err != nil {
+		setupLog.Error(err, "unable to add OVS metrics collector")
+		os.Exit(1)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
