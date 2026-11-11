@@ -155,3 +155,33 @@ func (c *Client) runOutput(ctx context.Context, cmd string, args ...string) (str
 	}
 	return strings.TrimSpace(string(output)), nil
 }
+
+// ListPorts returns the port names on a bridge.
+func (c *Client) ListPorts(ctx context.Context, bridge string) ([]string, error) {
+	out, err := c.runOutput(ctx, c.ovsVsctl, "list-ports", bridge)
+	if err != nil {
+		return nil, err
+	}
+	var ports []string
+	for _, p := range strings.Split(out, "\n") {
+		if p = strings.TrimSpace(p); p != "" {
+			ports = append(ports, p)
+		}
+	}
+	return ports, nil
+}
+
+// SetBridgeMTU sets the MTU request on the bridge internal interface.
+func (c *Client) SetBridgeMTU(ctx context.Context, bridge string, mtu int) error {
+	return c.SetInterfaceMTU(ctx, bridge, mtu)
+}
+
+// ReplaceFlows atomically replaces all flows on a bridge with the given set.
+func (c *Client) ReplaceFlows(ctx context.Context, bridge string, flows []string) error {
+	cmd := exec.CommandContext(ctx, c.ovsOfctl, "replace-flows", bridge, "-")
+	cmd.Stdin = strings.NewReader(strings.Join(flows, "\n") + "\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ovs-ofctl replace-flows %s: %w (output: %s)", bridge, err, string(out))
+	}
+	return nil
+}

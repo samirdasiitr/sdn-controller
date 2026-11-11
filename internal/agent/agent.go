@@ -30,7 +30,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	infrav1alpha1 "github.com/sdncontroller/sdncontroller/api/infra/v1alpha1"
+	gwv1alpha1 "github.com/sdncontroller/sdncontroller/api/gateway/v1alpha1"
 	nfvv1alpha1 "github.com/sdncontroller/sdncontroller/api/nfv/v1alpha1"
+	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
 	agentbond "github.com/sdncontroller/sdncontroller/internal/agent/bond"
 	agentdpu "github.com/sdncontroller/sdncontroller/internal/agent/dpu"
 	agentlibvirt "github.com/sdncontroller/sdncontroller/internal/agent/libvirt"
@@ -38,6 +40,7 @@ import (
 	agentoffload "github.com/sdncontroller/sdncontroller/internal/agent/offload"
 	agentovs "github.com/sdncontroller/sdncontroller/internal/agent/ovs"
 	agenttunnel "github.com/sdncontroller/sdncontroller/internal/agent/tunnel"
+	agentvpc "github.com/sdncontroller/sdncontroller/internal/agent/vpcattach"
 	pkgovs "github.com/sdncontroller/sdncontroller/pkg/ovs"
 )
 
@@ -47,6 +50,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(infrav1alpha1.AddToScheme(scheme))
 	utilruntime.Must(nfvv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(vpcv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(gwv1alpha1.AddToScheme(scheme))
 }
 
 // Agent orchestrates all node agent subsystems: OVS, tunnels, offload, bonds, NFV, libvirt, and DPU.
@@ -63,6 +68,7 @@ type Agent struct {
 	NFVAgent       *agentnfv.NFVAgent
 	LibvirtManager *agentlibvirt.LibvirtManager
 	DPUManager     *agentdpu.DPUManager
+	VPCAttach      *agentvpc.Reconciler
 
 	cancel context.CancelFunc
 }
@@ -100,6 +106,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.NFVAgent = agentnfv.NewNFVAgent(ovsClient, "br-int", a.log)
 	a.LibvirtManager = agentlibvirt.NewLibvirtManager(ovsClient, a.log)
 	a.DPUManager = agentdpu.NewDPUManager(a.log)
+	a.VPCAttach = agentvpc.New(a.k8sClient, a.cfg.NodeName, ovsClient, a.log)
 
 	// Phase 1: Discover hardware.
 	a.log.InfoContext(ctx, "discovering hardware capabilities")
@@ -132,6 +139,11 @@ func (a *Agent) Start(ctx context.Context) error {
 	// Phase 5: Install service chains from ServiceChain CRDs.
 	if err := a.installServiceChains(ctx); err != nil {
 		a.log.ErrorContext(ctx, "failed to install service chains", "error", err)
+	}
+
+	// Phase 5b: Attach this node to its VPCs (bridges, tunnels, flows, IGW NAT).
+	if err := a.VPCAttach.Reconcile(ctx); err != nil {
+		a.log.ErrorContext(ctx, "failed to attach VPCs", "error", err)
 	}
 
 	// Phase 6: Report status.
@@ -304,7 +316,7 @@ func (a *Agent) installServiceChains(ctx context.Context) error {
 // watchLoop periodically reconciles CRD state. In a production agent, this would
 // use controller-runtime informers with watches; here we use periodic polling.
 func (a *Agent) watchLoop(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -325,6 +337,9 @@ func (a *Agent) watchLoop(ctx context.Context) {
 			}
 			if err := a.installServiceChains(ctx); err != nil {
 				a.log.Error("service chain reconciliation failed", "error", err)
+			}
+			if err := a.VPCAttach.Reconcile(ctx); err != nil {
+				a.log.Error("VPC attachment reconciliation failed", "error", err)
 			}
 		}
 	}
