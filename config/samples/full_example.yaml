@@ -25,6 +25,8 @@ metadata:
     environment: production
 spec:
   cidr: "10.100.0.0/16"
+  tunnelType: VXLAN
+  vni: 1000
   mtu: 9000
 ---
 # Public Subnet for web-facing services

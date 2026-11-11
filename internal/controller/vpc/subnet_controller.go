@@ -31,6 +31,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
+	"github.com/sdncontroller/sdncontroller/internal/deps"
 	"github.com/sdncontroller/sdncontroller/internal/ipam"
 	"github.com/sdncontroller/sdncontroller/pkg/netutil"
 )
@@ -164,6 +165,16 @@ func (r *SubnetReconciler) reconcileDelete(ctx context.Context, subnet *vpcv1alp
 	log := logf.FromContext(ctx)
 
 	if controllerutil.ContainsFinalizer(subnet, subnetFinalizer) {
+		used, err := deps.SubnetDependents(ctx, r.Client, subnet.Namespace, subnet.Name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if len(used) > 0 {
+			log.Info("Subnet is in use, deletion blocked", "usedBy", used)
+			r.setCondition(subnet, "Ready", metav1.ConditionFalse, "InUse", fmt.Sprintf("deletion blocked, in use by: %v", used))
+			_ = r.Status().Update(ctx, subnet)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 		r.IPAMManager.DeletePool(subnet.Name)
 
 		controllerutil.RemoveFinalizer(subnet, subnetFinalizer)

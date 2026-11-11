@@ -42,6 +42,17 @@ rules:
   - patch
   - update
 - apiGroups:
+  - gateway.sdncontroller.io
+  - infra.sdncontroller.io
+  - nfv.sdncontroller.io
+  - service.sdncontroller.io
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - infra.sdncontroller.io
   resources:
   - bonds

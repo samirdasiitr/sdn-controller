@@ -20,6 +20,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// TunnelType defines the overlay tunnel encapsulation type.
+// +kubebuilder:validation:Enum=VXLAN;IPIP;GRE
+type TunnelType string
+
+const (
+	TunnelTypeVXLAN TunnelType = "VXLAN"
+	TunnelTypeIPIP  TunnelType = "IPIP"
+	TunnelTypeGRE   TunnelType = "GRE"
+)
+
 // VPCSpec defines the desired state of VPC.
 type VPCSpec struct {
 	// cidr is the primary IPv4 CIDR block for this VPC.
@@ -31,12 +41,18 @@ type VPCSpec struct {
 	// +optional
 	SecondaryCIDRs []string `json:"secondaryCIDRs,omitempty"`
 
-	// vni is the VXLAN Network Identifier for overlay isolation.
-	// Auto-allocated if not specified.
+	// vni is the VXLAN/GRE Network Identifier for overlay isolation.
+	// Required for VXLAN and GRE tunnel types. Must be unique across VPCs.
+	// The same VNI is used on all nodes to establish tunnels for this VPC.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=16777215
 	// +optional
 	VNI *int32 `json:"vni,omitempty"`
+
+	// tunnelType specifies the overlay encapsulation for cross-node traffic.
+	// +kubebuilder:default=VXLAN
+	// +optional
+	TunnelType TunnelType `json:"tunnelType,omitempty"`
 
 	// mtu is the Maximum Transmission Unit for this VPC.
 	// +kubebuilder:validation:Minimum=1280
@@ -67,6 +83,33 @@ const (
 	VPCPhaseFailed       VPCPhase = "Failed"
 )
 
+// VPCNodeAttachment describes one node participating in a VPC.
+type VPCNodeAttachment struct {
+	// nodeName is the Kubernetes node name.
+	NodeName string `json:"nodeName"`
+	// tunnelIP is the underlay IP the node uses as tunnel endpoint.
+	// +optional
+	TunnelIP string `json:"tunnelIP,omitempty"`
+	// bridge is the OVS bridge created for this VPC on the node.
+	// +optional
+	Bridge string `json:"bridge,omitempty"`
+}
+
+// VPCRoute is a single route in the VPC route table.
+type VPCRoute struct {
+	// destination is the destination CIDR.
+	Destination string `json:"destination"`
+	// nextHopNode is the node hosting the destination subnet (tunnel next hop).
+	// +optional
+	NextHopNode string `json:"nextHopNode,omitempty"`
+	// nextHopIP is the tunnel endpoint IP of nextHopNode.
+	// +optional
+	NextHopIP string `json:"nextHopIP,omitempty"`
+	// type is Local, Tunnel or Gateway.
+	// +optional
+	Type string `json:"type,omitempty"`
+}
+
 // VPCStatus defines the observed state of VPC.
 type VPCStatus struct {
 	// phase is the current lifecycle phase of the VPC.
@@ -85,6 +128,20 @@ type VPCStatus struct {
 	// +optional
 	ActiveNodes int32 `json:"activeNodes,omitempty"`
 
+	// attachedNodes lists the nodes that participate in this VPC.
+	// Node agents watch this to create bridges, tunnels and flows.
+	// +optional
+	AttachedNodes []VPCNodeAttachment `json:"attachedNodes,omitempty"`
+
+	// routes is the route table distributed via the Kubernetes API (replaces BGP).
+	// Every node agent programs these into its local OVS pipeline.
+	// +optional
+	Routes []VPCRoute `json:"routes,omitempty"`
+
+	// usedBy lists dependent resources (kind/name) that block deletion.
+	// +optional
+	UsedBy []string `json:"usedBy,omitempty"`
+
 	// conditions represent the current state of the VPC resource.
 	// +listType=map
 	// +listMapKey=type
@@ -96,6 +153,7 @@ type VPCStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=vpc
 // +kubebuilder:printcolumn:name="CIDR",type=string,JSONPath=`.spec.cidr`
+// +kubebuilder:printcolumn:name="Tunnel",type=string,JSONPath=`.spec.tunnelType`
 // +kubebuilder:printcolumn:name="VNI",type=integer,JSONPath=`.status.allocatedVNI`
 // +kubebuilder:printcolumn:name="MTU",type=integer,JSONPath=`.spec.mtu`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`

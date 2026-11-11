@@ -19,7 +19,9 @@ package nfv
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/sdncontroller/sdncontroller/internal/deps"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -137,6 +139,14 @@ func (r *VirtualNetworkFunctionReconciler) reconcileDelete(ctx context.Context, 
 	log := logf.FromContext(ctx)
 
 	if controllerutil.ContainsFinalizer(vnf, virtualNetworkFunctionFinalizer) {
+		used, err := deps.VNFDependents(ctx, r.Client, vnf.Namespace, vnf.Name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if len(used) > 0 {
+			log.Info("VNF is in use, deletion blocked", "usedBy", used)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
 		controllerutil.RemoveFinalizer(vnf, virtualNetworkFunctionFinalizer)
 		if err := r.Update(ctx, vnf); err != nil {
 			return ctrl.Result{}, err

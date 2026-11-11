@@ -21,15 +21,23 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
+	"github.com/sdncontroller/sdncontroller/internal/deps"
 	"github.com/sdncontroller/sdncontroller/pkg/netutil"
 )
 
@@ -46,6 +54,8 @@ type VPCReconciler struct {
 // +kubebuilder:rbac:groups=vpc.sdncontroller.io,resources=vpcs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vpc.sdncontroller.io,resources=vpcs/finalizers,verbs=update
 // +kubebuilder:rbac:groups=vpc.sdncontroller.io,resources=subnets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=gateway.sdncontroller.io;service.sdncontroller.io;nfv.sdncontroller.io;infra.sdncontroller.io,resources=*,verbs=get;list;watch
 
 func (r *VPCReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -108,8 +118,25 @@ func (r *VPCReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		}
 	}
 
+	// Default tunnel type and require an explicit VNI for VNI-based encapsulations
+	tunnelType := vpc.Spec.TunnelType
+	if tunnelType == "" {
+		tunnelType = vpcv1alpha1.TunnelTypeVXLAN
+	}
+	if tunnelType != vpcv1alpha1.TunnelTypeIPIP && vpc.Spec.VNI == nil {
+		msg := fmt.Sprintf("spec.vni is required for tunnelType %s so all nodes use the same VNI", tunnelType)
+		r.setCondition(&vpc, "VNIAllocated", metav1.ConditionFalse, "VNIRequired", msg)
+		vpc.Status.Phase = vpcv1alpha1.VPCPhaseFailed
+		_ = r.Status().Update(ctx, &vpc)
+		return ctrl.Result{}, nil
+	}
+
 	// Allocate VNI (idempotent: reuse existing allocation from status)
 	var vni int32
+	if vpc.Status.AllocatedVNI > 0 && vpc.Spec.VNI != nil && *vpc.Spec.VNI != vpc.Status.AllocatedVNI {
+		r.VNIAllocator.Release(vpc.Status.AllocatedVNI)
+		vpc.Status.AllocatedVNI = 0
+	}
 	if vpc.Status.AllocatedVNI > 0 {
 		// Restore in-memory state from persisted status
 		r.VNIAllocator.Restore(vpc.Status.AllocatedVNI, vpc.Name)
@@ -145,6 +172,56 @@ func (r *VPCReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	vpc.Status.AllocatedSubnets = subnetCount
 
+	// Attach nodes selected by spec.nodeSelector (all nodes when unset)
+	sel := labels.Everything()
+	if vpc.Spec.NodeSelector != nil {
+		if s, err := metav1.LabelSelectorAsSelector(vpc.Spec.NodeSelector); err == nil {
+			sel = s
+		}
+	}
+	var nodeList corev1.NodeList
+	if err := r.List(ctx, &nodeList, client.MatchingLabelsSelector{Selector: sel}); err != nil {
+		return ctrl.Result{}, err
+	}
+	bridge := vpcBridgeName(vpc.Name)
+	attached := make([]vpcv1alpha1.VPCNodeAttachment, 0, len(nodeList.Items))
+	nodeIP := map[string]string{}
+	for _, n := range nodeList.Items {
+		ip := ""
+		for _, a := range n.Status.Addresses {
+			if a.Type == corev1.NodeInternalIP {
+				ip = a.Address
+				break
+			}
+		}
+		nodeIP[n.Name] = ip
+		attached = append(attached, vpcv1alpha1.VPCNodeAttachment{NodeName: n.Name, TunnelIP: ip, Bridge: bridge})
+	}
+	vpc.Status.AttachedNodes = attached
+	vpc.Status.ActiveNodes = int32(len(attached))
+
+	// Route table distributed through the K8s API (replaces BGP): each subnet is
+	// local on its nodes and reachable via tunnel from every other node.
+	routes := []vpcv1alpha1.VPCRoute{}
+	for _, sn := range subnetList.Items {
+		if sn.Spec.VPCRef != vpc.Name || sn.Namespace != vpc.Namespace || sn.Status.Phase == vpcv1alpha1.SubnetPhaseFailed {
+			continue
+		}
+		for _, a := range attached {
+			routes = append(routes, vpcv1alpha1.VPCRoute{
+				Destination: sn.Spec.CIDR, NextHopNode: a.NodeName, NextHopIP: nodeIP[a.NodeName], Type: "Tunnel",
+			})
+		}
+	}
+	vpc.Status.Routes = routes
+
+	// Record dependents (informational; deletion is blocked by the finalizer)
+	used, err := deps.VPCDependents(ctx, r.Client, vpc.Namespace, vpc.Name)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	vpc.Status.UsedBy = used
+
 	// Mark Ready
 	vpc.Status.Phase = vpcv1alpha1.VPCPhaseReady
 	r.setCondition(&vpc, "Ready", metav1.ConditionTrue, "Provisioned", "VPC is ready")
@@ -161,16 +238,17 @@ func (r *VPCReconciler) reconcileDelete(ctx context.Context, vpc *vpcv1alpha1.VP
 	log := logf.FromContext(ctx)
 
 	if controllerutil.ContainsFinalizer(vpc, vpcFinalizer) {
-		// Check for remaining subnets
-		var subnetList vpcv1alpha1.SubnetList
-		if err := r.List(ctx, &subnetList); err != nil {
+		used, err := deps.VPCDependents(ctx, r.Client, vpc.Namespace, vpc.Name)
+		if err != nil {
 			return ctrl.Result{}, err
 		}
-		for _, sn := range subnetList.Items {
-			if sn.Spec.VPCRef == vpc.Name {
-				log.Info("VPC still has subnets, waiting", "subnet", sn.Name)
-				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-			}
+		if len(used) > 0 {
+			log.Info("VPC is in use, deletion blocked", "usedBy", used)
+			vpc.Status.Phase = vpcv1alpha1.VPCPhaseDeleting
+			vpc.Status.UsedBy = used
+			r.setCondition(vpc, "Ready", metav1.ConditionFalse, "InUse", fmt.Sprintf("deletion blocked, in use by: %v", used))
+			_ = r.Status().Update(ctx, vpc)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 		}
 
 		// Release VNI
@@ -187,6 +265,14 @@ func (r *VPCReconciler) reconcileDelete(ctx context.Context, vpc *vpcv1alpha1.VP
 	return ctrl.Result{}, nil
 }
 
+func vpcBridgeName(name string) string {
+	b := "br-" + name
+	if len(b) > 15 {
+		b = b[:15]
+	}
+	return b
+}
+
 func (r *VPCReconciler) setCondition(vpc *vpcv1alpha1.VPC, condType string, status metav1.ConditionStatus, reason, message string) {
 	meta.SetStatusCondition(&vpc.Status.Conditions, metav1.Condition{
 		Type:               condType,
@@ -199,8 +285,28 @@ func (r *VPCReconciler) setCondition(vpc *vpcv1alpha1.VPC, condType string, stat
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *VPCReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	subnetToVPC := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		sn, ok := o.(*vpcv1alpha1.Subnet)
+		if !ok {
+			return nil
+		}
+		return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: sn.Spec.VPCRef, Namespace: sn.Namespace}}}
+	})
+	nodeToVPCs := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
+		var l vpcv1alpha1.VPCList
+		if err := r.List(ctx, &l); err != nil {
+			return nil
+		}
+		reqs := make([]reconcile.Request, 0, len(l.Items))
+		for _, v := range l.Items {
+			reqs = append(reqs, reconcile.Request{NamespacedName: types.NamespacedName{Name: v.Name, Namespace: v.Namespace}})
+		}
+		return reqs
+	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&vpcv1alpha1.VPC{}).
+		Watches(&vpcv1alpha1.Subnet{}, subnetToVPC).
+		Watches(&corev1.Node{}, nodeToVPCs, builder.WithPredicates(predicate.LabelChangedPredicate{})).
 		Named("vpc-vpc").
 		Complete(r)
 }

@@ -20,6 +20,9 @@ spec:
     - jsonPath: .spec.cidr
       name: CIDR
       type: string
+    - jsonPath: .spec.tunnelType
+      name: Tunnel
+      type: string
     - jsonPath: .status.allocatedVNI
       name: VNI
       type: integer
@@ -127,10 +130,20 @@ spec:
                 items:
                   type: string
                 type: array
+              tunnelType:
+                default: VXLAN
+                description: tunnelType specifies the overlay encapsulation for cross-node
+                  traffic.
+                enum:
+                - VXLAN
+                - IPIP
+                - GRE
+                type: string
               vni:
                 description: |-
-                  vni is the VXLAN Network Identifier for overlay isolation.
-                  Auto-allocated if not specified.
+                  vni is the VXLAN/GRE Network Identifier for overlay isolation.
+                  Required for VXLAN and GRE tunnel types. Must be unique across VPCs.
+                  The same VNI is used on all nodes to establish tunnels for this VPC.
                 format: int32
                 maximum: 16777215
                 minimum: 1
@@ -154,6 +167,29 @@ spec:
                 description: allocatedVNI is the VNI assigned to this VPC.
                 format: int32
                 type: integer
+              attachedNodes:
+                description: |-
+                  attachedNodes lists the nodes that participate in this VPC.
+                  Node agents watch this to create bridges, tunnels and flows.
+                items:
+                  description: VPCNodeAttachment describes one node participating
+                    in a VPC.
+                  properties:
+                    bridge:
+                      description: bridge is the OVS bridge created for this VPC on
+                        the node.
+                      type: string
+                    nodeName:
+                      description: nodeName is the Kubernetes node name.
+                      type: string
+                    tunnelIP:
+                      description: tunnelIP is the underlay IP the node uses as tunnel
+                        endpoint.
+                      type: string
+                  required:
+                  - nodeName
+                  type: object
+                type: array
               conditions:
                 description: conditions represent the current state of the VPC resource.
                 items:
@@ -223,6 +259,36 @@ spec:
                 - Deleting
                 - Failed
                 type: string
+              routes:
+                description: |-
+                  routes is the route table distributed via the Kubernetes API (replaces BGP).
+                  Every node agent programs these into its local OVS pipeline.
+                items:
+                  description: VPCRoute is a single route in the VPC route table.
+                  properties:
+                    destination:
+                      description: destination is the destination CIDR.
+                      type: string
+                    nextHopIP:
+                      description: nextHopIP is the tunnel endpoint IP of nextHopNode.
+                      type: string
+                    nextHopNode:
+                      description: nextHopNode is the node hosting the destination
+                        subnet (tunnel next hop).
+                      type: string
+                    type:
+                      description: type is Local, Tunnel or Gateway.
+                      type: string
+                  required:
+                  - destination
+                  type: object
+                type: array
+              usedBy:
+                description: usedBy lists dependent resources (kind/name) that block
+                  deletion.
+                items:
+                  type: string
+                type: array
             type: object
         type: object
     served: true
