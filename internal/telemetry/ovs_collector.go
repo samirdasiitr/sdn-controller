@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -85,6 +86,53 @@ var (
 		Help: "Whether OVS daemon is running (1) or down (0)",
 	}, []string{"node", "daemon"})
 
+	// OpenFlow rule traffic per bridge
+	OVSBridgeFlowPackets = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sdn_ovs_bridge_flow_packets",
+		Help: "Sum of packet counters across all OpenFlow rules on the bridge",
+	}, []string{"node", "bridge"})
+
+	OVSBridgeFlowBytes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sdn_ovs_bridge_flow_bytes",
+		Help: "Sum of byte counters across all OpenFlow rules on the bridge",
+	}, []string{"node", "bridge"})
+
+	// Datapath (kernel/TC) flows and offload
+	OVSDatapathFlows = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sdn_ovs_datapath_flows",
+		Help: "Datapath flows currently installed (OVS 'flows:' from dpctl/show)",
+	}, []string{"node", "datapath"})
+
+	OVSDatapathFlowsOffloaded = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sdn_ovs_datapath_flows_offloaded",
+		Help: "Datapath flows offloaded to hardware (offloaded:yes)",
+	}, []string{"node"})
+
+	OVSDatapathFlowsSoftware = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sdn_ovs_datapath_flows_software",
+		Help: "Datapath flows handled in software (offloaded:no)",
+	}, []string{"node"})
+
+	OVSDatapathFlowsByType = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sdn_ovs_datapath_flows_by_type",
+		Help: "Datapath flows by datapath type (dp:ovs, dp:tc, ...)",
+	}, []string{"node", "dp"})
+
+	OVSDatapathLookups = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sdn_ovs_datapath_lookups",
+		Help: "Datapath lookup counters (hit, missed, lost)",
+	}, []string{"node", "result"})
+
+	OVSHWOffloadEnabled = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sdn_ovs_hw_offload_enabled",
+		Help: "1 if Open_vSwitch other_config:hw-offload is true",
+	}, []string{"node"})
+
+	OVSNICHWTCOffload = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sdn_ovs_nic_hw_tc_offload",
+		Help: "1 if the physical NIC has hw-tc-offload enabled (ethtool -k)",
+	}, []string{"node", "device"})
+
 	// Summary
 	OVSBridgeTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "sdn_ovs_bridge_total",
@@ -102,6 +150,10 @@ func init() {
 		OVSTableFlowCount,
 		OVSDaemonStatus,
 		OVSBridgeTotal,
+		OVSBridgeFlowPackets, OVSBridgeFlowBytes,
+		OVSDatapathFlows, OVSDatapathFlowsOffloaded, OVSDatapathFlowsSoftware,
+		OVSDatapathFlowsByType, OVSDatapathLookups,
+		OVSHWOffloadEnabled, OVSNICHWTCOffload,
 	)
 }
 
@@ -156,9 +208,19 @@ func (c *OVSCollector) collect(ctx context.Context) {
 	OVSTableFlowCount.Reset()
 	OVSDaemonStatus.Reset()
 	OVSBridgeTotal.Reset()
+	OVSBridgeFlowPackets.Reset()
+	OVSBridgeFlowBytes.Reset()
+	OVSDatapathFlows.Reset()
+	OVSDatapathFlowsOffloaded.Reset()
+	OVSDatapathFlowsSoftware.Reset()
+	OVSDatapathFlowsByType.Reset()
+	OVSDatapathLookups.Reset()
+	OVSHWOffloadEnabled.Reset()
+	OVSNICHWTCOffload.Reset()
 
 	// Check daemon status
 	c.collectDaemonStatus()
+	c.collectDatapath()
 
 	// List bridges
 	bridges, err := c.runOVS("ovs-vsctl", "list-br")
@@ -216,16 +278,25 @@ func (c *OVSCollector) collectBridge(ctx context.Context, bridge string) {
 	if err == nil {
 		flowLines := parseLines(flowsOut)
 		flowCount := 0
+		var pkts, bytes float64
 		tableCounts := map[string]int{}
 		for _, line := range flowLines {
 			if strings.Contains(line, "cookie=") || strings.Contains(line, "actions=") {
 				flowCount++
+				if m := flowCountersRe.FindStringSubmatch(line); m != nil {
+					p, _ := strconv.ParseFloat(m[1], 64)
+					b, _ := strconv.ParseFloat(m[2], 64)
+					pkts += p
+					bytes += b
+				}
 				if tbl := extractTableID(line); tbl != "" {
 					tableCounts[tbl]++
 				}
 			}
 		}
 		OVSBridgeFlowCount.WithLabelValues(node, bridge).Set(float64(flowCount))
+		OVSBridgeFlowPackets.WithLabelValues(node, bridge).Set(pkts)
+		OVSBridgeFlowBytes.WithLabelValues(node, bridge).Set(bytes)
 		for tbl, cnt := range tableCounts {
 			OVSTableFlowCount.WithLabelValues(node, bridge, tbl).Set(float64(cnt))
 		}
@@ -237,6 +308,88 @@ func (c *OVSCollector) collectBridge(ctx context.Context, bridge string) {
 		return
 	}
 	c.parsePortStats(node, bridge, ports, statsOut)
+}
+
+var (
+	flowCountersRe = regexp.MustCompile(`n_packets=(\d+), n_bytes=(\d+)`)
+	dpOffloadedRe  = regexp.MustCompile(`offloaded:(yes|no)`)
+	dpTypeRe       = regexp.MustCompile(`dp:(\w+)`)
+	dpLookupsRe    = regexp.MustCompile(`lookups: hit:(\d+) missed:(\d+) lost:(\d+)`)
+	dpFlowsRe      = regexp.MustCompile(`(?m)^\s*flows:\s*(\d+)`)
+	dpNameRe       = regexp.MustCompile(`(?m)^(\S+@\S+):`)
+)
+
+// collectDatapath exports datapath flow counts, offload state and lookup stats.
+func (c *OVSCollector) collectDatapath() {
+	node := c.nodeName
+
+	enabled := 0.0
+	if out, err := c.runCmd("ovs-vsctl", "--if-exists", "get", "Open_vSwitch", ".", "other_config:hw-offload"); err == nil &&
+		strings.Contains(out, "true") {
+		enabled = 1
+	}
+	OVSHWOffloadEnabled.WithLabelValues(node).Set(enabled)
+
+	if out, err := c.runCmd("ovs-appctl", "dpctl/show"); err == nil {
+		dp := "system"
+		if m := dpNameRe.FindStringSubmatch(out); m != nil {
+			dp = m[1]
+		}
+		if m := dpFlowsRe.FindStringSubmatch(out); m != nil {
+			v, _ := strconv.ParseFloat(m[1], 64)
+			OVSDatapathFlows.WithLabelValues(node, dp).Set(v)
+		}
+		if m := dpLookupsRe.FindStringSubmatch(out); m != nil {
+			for i, r := range []string{"hit", "missed", "lost"} {
+				v, _ := strconv.ParseFloat(m[i+1], 64)
+				OVSDatapathLookups.WithLabelValues(node, r).Set(v)
+			}
+		}
+	}
+
+	var off, soft float64
+	byType := map[string]float64{"ovs": 0, "tc": 0}
+	if out, err := c.runCmd("ovs-appctl", "dpctl/dump-flows", "-m"); err == nil {
+		for _, line := range strings.Split(out, "\n") {
+			t := dpTypeRe.FindStringSubmatch(line)
+			if t == nil {
+				continue
+			}
+			byType[t[1]]++
+			// Only TC/hardware flows print offloaded:yes|no; software (dp:ovs) flows omit it.
+			if m := dpOffloadedRe.FindStringSubmatch(line); m != nil && m[1] == "yes" {
+				off++
+			} else {
+				soft++
+			}
+		}
+	}
+	OVSDatapathFlowsOffloaded.WithLabelValues(node).Set(off)
+	OVSDatapathFlowsSoftware.WithLabelValues(node).Set(soft)
+	for t, v := range byType {
+		OVSDatapathFlowsByType.WithLabelValues(node, t).Set(v)
+	}
+
+	// Physical NICs: is TC flower hardware offload enabled?
+	if ents, err := os.ReadDir("/sys/class/net"); err == nil {
+		for _, e := range ents {
+			name := e.Name()
+			if _, err := os.Stat("/sys/class/net/" + name + "/device"); err != nil {
+				continue
+			}
+			out, err := c.runCmd("ethtool", "-k", name)
+			if err != nil {
+				continue
+			}
+			v := 0.0
+			for _, l := range strings.Split(out, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(l), "hw-tc-offload:") && strings.Contains(l, ": on") {
+					v = 1
+				}
+			}
+			OVSNICHWTCOffload.WithLabelValues(node, name).Set(v)
+		}
+	}
 }
 
 // portStatRe matches "port  N:" or "port LOCAL:"

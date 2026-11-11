@@ -5,7 +5,7 @@ import { getTopology, listNodes, queryMetric } from '../api';
 import { useData } from '../context';
 import { Card, ErrorBanner, PageHeader } from '../components/ui';
 import LogicalView from '../components/topology/LogicalView';
-import PhysicalView, { TunnelTable, type Bridge } from '../components/topology/PhysicalView';
+import PhysicalView, { TunnelTable, type Bridge, type NodeStats } from '../components/topology/PhysicalView';
 import { EDGE_COLORS, KIND_STYLE } from '../components/topology/kinds';
 import { phaseDot } from '../components/StatusBadge';
 
@@ -58,6 +58,21 @@ export default function Topology() {
       return [];
     }
   });
+  const nodeStats = useData(async (): Promise<Map<string, NodeStats>> => {
+    const m = new Map<string, NodeStats>();
+    try {
+      const [flows, off] = await Promise.all([
+        queryMetric('sum by (node) (sdn_ovs_bridge_flows)'),
+        queryMetric('sdn_ovs_datapath_flows_offloaded'),
+      ]);
+      const get = (n: string) => m.get(n) ?? m.set(n, { rules: 0, offloaded: 0 }).get(n)!;
+      for (const s of flows) get(s.metric.node).rules = Number(s.value?.[1] ?? 0);
+      for (const s of off) get(s.metric.node).offloaded = Number(s.value?.[1] ?? 0);
+    } catch {
+      /* no metrics */
+    }
+    return m;
+  });
 
   const tab = (v: 'logical' | 'physical', label: string) => (
     <button
@@ -99,7 +114,7 @@ export default function Topology() {
           ) : view === 'logical' ? (
             <LogicalView topo={topo.data} dir={dir} />
           ) : (
-            <PhysicalView topo={topo.data} k8s={nodes.data ?? []} bridges={bridges.data ?? []} selected={selected} />
+            <PhysicalView topo={topo.data} k8s={nodes.data ?? []} bridges={bridges.data ?? []} stats={nodeStats.data} selected={selected} />
           )}
         </div>
         <Legend physical={view === 'physical'} />

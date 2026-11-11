@@ -13,10 +13,11 @@ import { EDGE_COLORS } from './kinds';
 import { isPlaceable, placementOf } from '../../placement';
 
 export interface Bridge { node: string; bridge: string; up: boolean; ports?: number; flows?: number }
+export interface NodeStats { rules: number; offloaded: number }
 
 const nodeTypes = { host: HostCard };
 
-export function layoutPhysical(topo: TopologyData, k8s: K8sNode[], bridges: Bridge[], selected?: string | null) {
+export function layoutPhysical(topo: TopologyData, k8s: K8sNode[], bridges: Bridge[], stats?: Map<string, NodeStats>, selected?: string | null) {
   const hosts = new Map<string, HostData>();
   const host = (name: string): HostData => {
     let h = hosts.get(name);
@@ -29,6 +30,7 @@ export function layoutPhysical(topo: TopologyData, k8s: K8sNode[], bridges: Brid
   for (const n of k8s) {
     hosts.set(n.name, { name: n.name, ip: n.internalIP, ready: n.ready, bridges: [], vpcs: [], chips: [], note: n.kubeletVersion });
   }
+  for (const [name, s] of stats ?? []) host(name).stats = s;
   for (const b of bridges) {
     const h = host(b.node);
     if (h.external) h.note = 'OVS host (not a Kubernetes node)';
@@ -104,10 +106,10 @@ export function layoutPhysical(topo: TopologyData, k8s: K8sNode[], bridges: Brid
   return { nodes, edges };
 }
 
-function Inner({ topo, k8s, bridges, selected }: Props) {
+function Inner({ topo, k8s, bridges, stats, selected }: Props) {
   const { theme } = useTheme();
   const { fitView } = useReactFlow();
-  const { nodes, edges } = useMemo(() => layoutPhysical(topo, k8s, bridges, selected), [topo, k8s, bridges, selected]);
+  const { nodes, edges } = useMemo(() => layoutPhysical(topo, k8s, bridges, stats, selected), [topo, k8s, bridges, stats, selected]);
   useEffect(() => {
     const t = setTimeout(() => fitView({ padding: 0.15, duration: 300 }), 50);
     return () => clearTimeout(t);
@@ -121,7 +123,7 @@ function Inner({ topo, k8s, bridges, selected }: Props) {
   );
 }
 
-interface Props { topo: TopologyData; k8s: K8sNode[]; bridges: Bridge[]; selected?: string | null }
+interface Props { topo: TopologyData; k8s: K8sNode[]; bridges: Bridge[]; stats?: Map<string, NodeStats>; selected?: string | null }
 
 export default function PhysicalView(props: Props) {
   return (

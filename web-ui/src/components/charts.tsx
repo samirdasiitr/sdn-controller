@@ -49,10 +49,12 @@ export function LineChart({
   series,
   height = 160,
   fmt = fmtNum,
+  stacked = false,
 }: {
   series: Series[];
   height?: number;
   fmt?: (n: number) => string;
+  stacked?: boolean;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const W = 600;
@@ -64,9 +66,19 @@ export function LineChart({
     const ys = all.map((p) => p[1]);
     const x0 = Math.min(...xs), x1 = Math.max(...xs);
     let y0 = Math.min(0, ...ys), y1 = Math.max(...ys);
+    let stack: { xs: number[]; cum: number[][] } | null = null;
+    if (stacked) {
+      const ux = [...new Set(xs)].sort((a, b) => a - b);
+      const maps = series.map((s) => new Map(s.points));
+      const cum = series.map((_, i) =>
+        ux.map((t) => maps.slice(0, i + 1).reduce((a, m) => a + (m.get(t) ?? 0), 0)),
+      );
+      y1 = Math.max(y1, ...cum[cum.length - 1]);
+      stack = { xs: ux, cum };
+    }
     if (y1 === y0) y1 = y0 + 1;
-    return { x0, x1, y0, y1 };
-  }, [all.length, series]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { x0, x1, y0, y1, stack };
+  }, [all.length, series, stacked]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!geom)
     return <div style={{ height }} className="flex items-center justify-center text-sm text-gray-400">No data</div>;
   const { x0, x1, y0, y1 } = geom;
@@ -100,16 +112,36 @@ export function LineChart({
         ))}
         <text x={padL} y={height - 4} fontSize={10} fill="currentColor">{fmtT(x0)}</text>
         <text x={W - padR} y={height - 4} fontSize={10} fill="currentColor" textAnchor="end">{fmtT(x1)}</text>
-        {series.map((s, i) => (
-          <path
-            key={s.label}
-            d={s.points.map((p, j) => `${j ? 'L' : 'M'}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(' ')}
-            fill="none"
-            stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
-            strokeWidth={1.5}
-            strokeLinejoin="round"
-          />
-        ))}
+        {geom.stack
+          ? series.map((s, i) => {
+              const { xs, cum } = geom.stack!;
+              const top = cum[i].map((y, j) => `${j ? 'L' : 'M'}${sx(xs[j]).toFixed(1)},${sy(y).toFixed(1)}`).join(' ');
+              const base = i === 0 ? xs.map(() => 0) : cum[i - 1];
+              const bottom = base
+                .map((_, j) => xs.length - 1 - j)
+                .map((j) => `L${sx(xs[j]).toFixed(1)},${sy(base[j]).toFixed(1)}`);
+              return (
+                <path
+                  key={s.label}
+                  d={`${top} ${bottom.join(' ')} Z`}
+                  fill={SERIES_COLORS[i % SERIES_COLORS.length]}
+                  fillOpacity={0.35}
+                  stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
+                  strokeWidth={1}
+                  strokeLinejoin="round"
+                />
+              );
+            })
+          : series.map((s, i) => (
+              <path
+                key={s.label}
+                d={s.points.map((p, j) => `${j ? 'L' : 'M'}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(' ')}
+                fill="none"
+                stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
+                strokeWidth={1.5}
+                strokeLinejoin="round"
+              />
+            ))}
         {hoverT !== null && <line x1={sx(hoverT)} x2={sx(hoverT)} y1={padT} y2={height - padB} stroke="currentColor" opacity={0.4} />}
       </svg>
       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
@@ -163,6 +195,7 @@ export function MetricChart({
   step = 30,
   height = 160,
   className,
+  stacked = false,
 }: {
   title: string;
   query: string;
@@ -173,6 +206,7 @@ export function MetricChart({
   step?: number;
   height?: number;
   className?: string;
+  stacked?: boolean;
 }) {
   const { data, error, loading } = useData(() => queryRange(query, rangeSec, step), [query, rangeSec]);
   const series: Series[] = (data ?? []).map((s, i) => ({
@@ -190,7 +224,7 @@ export function MetricChart({
       ) : loading ? (
         <div className="py-6 text-center text-sm text-gray-400">Loading…</div>
       ) : (
-        <LineChart series={series} fmt={fmt} height={height} />
+        <LineChart series={series} fmt={fmt} height={height} stacked={stacked} />
       )}
     </Card>
   );

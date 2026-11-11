@@ -85,12 +85,13 @@ export interface HostData {
   external?: boolean;
   note?: string;
   bridges: { name: string; up: boolean; ports?: number; flows?: number }[];
+  stats?: { rules: number; offloaded: number };
   vpcs: { name: string; ns: string; vni?: number; tunnelIP?: string; bridge?: string }[];
   chips: { resource: string; ns?: string; name: string; label?: string; title?: string; role?: string }[];
 }
 
 export const hostHeight = (d: HostData) =>
-  64 + (d.bridges.length ? 22 + d.bridges.length * 20 : 0) + (d.vpcs.length ? 22 + d.vpcs.length * 20 : 0) + (d.chips.length ? 22 + Math.ceil(d.chips.length / 2) * 26 : 0) + 12;
+  64 + (d.stats ? 14 : 0) + (d.bridges.length ? 22 + d.bridges.length * 20 : 0) + (d.vpcs.length ? 22 + d.vpcs.length * 20 : 0) + (d.chips.length ? 22 + Math.ceil(d.chips.length / 2) * 26 : 0) + 12;
 export const HOST_W = 340;
 
 export function HostCard({ data, selected }: NodeProps<HostData>) {
@@ -112,6 +113,11 @@ export function HostCard({ data, selected }: NodeProps<HostData>) {
         />
       </div>
       <div className="text-[11px] text-gray-500 dark:text-gray-400">{[data.ip, data.note].filter(Boolean).join(' · ')}</div>
+      {data.stats && (
+        <div className="text-[11px] text-gray-500 dark:text-gray-400">
+          {data.stats.rules} rules · {data.stats.offloaded} offloaded
+        </div>
+      )}
       {data.bridges.length > 0 && (
         <div className={sec}>
           <div className={h}>OVS bridges</div>

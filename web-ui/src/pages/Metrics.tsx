@@ -2,8 +2,10 @@ import { useMemo } from 'react';
 import { queryMetric } from '../api';
 import { useData } from '../context';
 import { MetricChart, FORMATS, Stat, scalar } from '../components/charts';
-import { Card, ErrorBanner, MiniTable, PageHeader } from '../components/ui';
-import { fmtNum } from '../lib';
+import { Badge, Card, ErrorBanner, MiniTable, NodeLink, PageHeader } from '../components/ui';
+import { DaemonBadges, HwOffloadBadge, NicOffloadBadges, TableChips } from '../components/ovsui';
+import { fmtBytes, fmtNum } from '../lib';
+import { fmtOrDash, fmtPct, useOvs } from '../ovs';
 import { GRAFANA_URL } from '../resources';
 
 const TOTALS: [string, string][] = [
@@ -20,25 +22,9 @@ const TOTALS: [string, string][] = [
   ['Nodes', 'sdn_node_total'],
 ];
 
-export function useBridgeTable() {
-  return useData(async () => {
-    const [up, ports, flows] = await Promise.all([
-      queryMetric('sdn_ovs_bridge_up'),
-      queryMetric('sdn_ovs_bridge_ports'),
-      queryMetric('sdn_ovs_bridge_flows'),
-    ]);
-    const key = (m: Record<string, string>) => `${m.node}/${m.bridge}`;
-    const map = new Map<string, { node: string; bridge: string; up: boolean; ports?: number; flows?: number }>();
-    for (const s of up) map.set(key(s.metric), { node: s.metric.node, bridge: s.metric.bridge, up: Number(s.value?.[1]) === 1 });
-    for (const s of ports) { const r = map.get(key(s.metric)); if (r) r.ports = Number(s.value?.[1]); }
-    for (const s of flows) { const r = map.get(key(s.metric)); if (r) r.flows = Number(s.value?.[1]); }
-    return [...map.values()].sort((a, b) => key(a as any).localeCompare(key(b as any)));
-  });
-}
-
 export default function Metrics() {
   const totals = useData(() => Promise.all(TOTALS.map(([, q]) => queryMetric(q))));
-  const bridges = useBridgeTable();
+  const ovs = useOvs();
   const totalVals = useMemo(() => totals.data?.map((s) => scalar(s)), [totals.data]);
 
   return (
@@ -56,24 +42,63 @@ export default function Metrics() {
         ))}
       </div>
 
-      <Card title="OVS bridges per node">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">OVS rules &amp; offload</h2>
+
+      <Card title="OVS per node">
         <MiniTable
-          rows={bridges.data ?? []}
+          rows={ovs.data?.nodes ?? []}
+          empty="No OVS rule/offload metrics"
+          cols={[
+            { header: 'Node', render: (r) => <NodeLink name={r.node} /> },
+            { header: 'Bridges', render: (r) => r.bridges },
+            { header: 'Ports', render: (r) => r.ports },
+            { header: 'OpenFlow rules', render: (r) => fmtNum(r.rules) },
+            { header: 'Datapath flows', render: (r) => fmtOrDash(r.dpFlows) },
+            { header: 'Offloaded', render: (r) => fmtOrDash(r.offloaded) },
+            { header: 'Software', render: (r) => fmtOrDash(r.software) },
+            { header: 'Offload %', render: (r) => fmtPct(r.offloadPct) },
+            { header: 'HW offload', render: (r) => <HwOffloadBadge on={r.hwOffload} /> },
+            { header: 'NIC hw-tc-offload', render: (r) => <NicOffloadBadges nics={r.nics} /> },
+            { header: 'Daemons', render: (r) => <DaemonBadges daemons={r.daemons} /> },
+          ]}
+        />
+      </Card>
+
+      <Card title="OVS bridges">
+        <MiniTable
+          rows={ovs.data?.bridges ?? []}
           empty="No OVS bridge metrics"
           cols={[
-            { header: 'Node', render: (r) => r.node },
-            { header: 'Bridge', render: (r) => r.bridge },
-            { header: 'State', render: (r) => <span className={r.up ? 'font-medium text-green-600 dark:text-green-400' : 'font-medium text-red-600 dark:text-red-400'}>{r.up ? 'Up' : 'Down'}</span> },
-            { header: 'Ports', render: (r) => r.ports ?? '-' },
-            { header: 'Flows', render: (r) => r.flows ?? '-' },
+            { header: 'Node', render: (b) => <NodeLink name={b.node} /> },
+            { header: 'Bridge', render: (b) => <span className="font-mono">{b.bridge}</span> },
+            { header: 'State', render: (b) => (b.up === undefined ? '-' : <Badge tone={b.up ? 'green' : 'yellow'}>{b.up ? 'up' : 'down'}</Badge>) },
+            { header: 'Ports', render: (b) => b.ports ?? '-' },
+            { header: 'OpenFlow rules', render: (b) => b.flows ?? '-' },
+            { header: 'Rule pps', render: (b) => (b.pps === undefined ? '-' : `${fmtNum(b.pps)}/s`) },
+            { header: 'Rule Bps', render: (b) => (b.bps === undefined ? '-' : `${fmtBytes(b.bps)}/s`) },
+            { header: 'Rules per table', render: (b) => <TableChips bridge={b} /> },
           ]}
         />
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <MetricChart title="OpenFlow rules per bridge" query="sdn_ovs_bridge_flows" labelKey={['node', 'bridge']} />
+        <MetricChart
+          title="Datapath flows (offloaded vs software)"
+          query="sdn_ovs_datapath_flows_offloaded or sdn_ovs_datapath_flows_software"
+          labelFn={(m) => `${m.node} ${m.__name__?.includes('offloaded') ? 'offloaded' : 'software'}`}
+          stacked
+        />
+        <MetricChart
+          title="Datapath lookup rate (/s)"
+          query="sum by (node, result) (rate(sdn_ovs_datapath_lookups[1m]))"
+          labelFn={(m) => `${m.node} ${m.result}`}
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
         <MetricChart title="Port RX throughput" query="sum by (node,bridge,port) (rate(sdn_ovs_port_rx_bytes[1m]))" labelKey={['bridge', 'port']} fmt={FORMATS.bps} />
         <MetricChart title="Port TX throughput" query="sum by (node,bridge,port) (rate(sdn_ovs_port_tx_bytes[1m]))" labelKey={['bridge', 'port']} fmt={FORMATS.bps} />
-        <MetricChart title="Flows per bridge" query="sdn_ovs_bridge_flows" labelKey={['bridge']} />
         <MetricChart title="Controller reconcile rate (/s)" query="sum by (controller) (rate(controller_runtime_reconcile_total[1m]))" labelKey="controller" />
         <MetricChart title="Reconcile errors (/s)" query="sum by (controller) (rate(controller_runtime_reconcile_errors_total[1m]))" labelKey="controller" />
         <MetricChart title="Workqueue depth" query="workqueue_depth" labelKey="name" />

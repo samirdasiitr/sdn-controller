@@ -1,31 +1,18 @@
 import { Link, useParams } from 'react-router-dom';
 import { Server } from 'lucide-react';
-import { getNode, queryMetric } from '../api';
+import { getNode } from '../api';
 import { useData } from '../context';
 import { RESOURCES, detailPath } from '../resources';
-import { age } from '../lib';
+import { age, fmtBytes, fmtNum } from '../lib';
+import { fmtOrDash, fmtPct, useOvs } from '../ovs';
 import { Badge, Breadcrumb, Card, ErrorBanner, MiniTable, PageHeader, Props, linkCls } from '../components/ui';
-
-async function loadBridges(node: string) {
-  try {
-    const sel = `{node="${node}"}`;
-    const [up, ports, flows] = await Promise.all([
-      queryMetric(`sdn_ovs_bridge_up${sel}`), queryMetric(`sdn_ovs_bridge_ports${sel}`), queryMetric(`sdn_ovs_bridge_flows${sel}`),
-    ]);
-    const m = new Map<string, { bridge: string; up: boolean; ports?: number; flows?: number }>();
-    for (const s of up) m.set(s.metric.bridge, { bridge: s.metric.bridge, up: Number(s.value?.[1]) === 1 });
-    for (const s of ports) { const r = m.get(s.metric.bridge); if (r) r.ports = Number(s.value?.[1]); }
-    for (const s of flows) { const r = m.get(s.metric.bridge); if (r) r.flows = Number(s.value?.[1]); }
-    return [...m.values()];
-  } catch {
-    return [];
-  }
-}
+import { DaemonBadges, HwOffloadBadge, NicOffloadBadges, TableChips } from '../components/ovsui';
 
 export default function NodeDetail() {
   const { name = '' } = useParams();
   const { data: node, error, loading } = useData(() => getNode(name), [name]);
-  const { data: bridges } = useData(() => loadBridges(name), [name]);
+  const { data: ovs } = useOvs(name);
+  const ovsNode = ovs?.nodes.find((n) => n.node === name);
   const crumbs = [{ label: 'Dashboard', to: '/' }, { label: 'Nodes', to: '/nodes' }, { label: name }];
 
   if (loading && !node) return <div><Breadcrumb items={crumbs} /><div className="text-gray-400">Loading…</div></div>;
@@ -87,12 +74,32 @@ export default function NodeDetail() {
           </div>
         )}
       </Card>
+      <Card title="OVS datapath & offload (Prometheus)">
+        <Props items={[
+          ['OpenFlow rules', ovsNode && fmtNum(ovsNode.rules)],
+          ['Datapath flows', ovsNode && fmtOrDash(ovsNode.dpFlows)],
+          ['Offloaded flows', ovsNode && fmtOrDash(ovsNode.offloaded)],
+          ['Software flows', ovsNode && fmtOrDash(ovsNode.software)],
+          ['Offload %', ovsNode && fmtPct(ovsNode.offloadPct)],
+          ['HW offload', ovsNode && <HwOffloadBadge on={ovsNode.hwOffload} />],
+          ['NIC hw-tc-offload', ovsNode && <NicOffloadBadges nics={ovsNode.nics} />],
+          ['OVS daemons', ovsNode && <DaemonBadges daemons={ovsNode.daemons} />],
+          ['Datapath flows by type', ovsNode && (ovsNode.dpByType.length === 0 ? undefined : (
+            <span className="flex flex-wrap gap-1">
+              {ovsNode.dpByType.map((d) => <Badge key={d.dp} tone="blue">{d.dp}: {d.flows}</Badge>)}
+            </span>
+          ))],
+        ]} />
+      </Card>
       <Card title="OVS bridges (Prometheus)">
-        <MiniTable rows={bridges ?? []} empty="No OVS bridge metrics available for this node" cols={[
+        <MiniTable rows={ovs?.bridges ?? []} empty="No OVS bridge metrics available for this node" cols={[
           { header: 'Bridge', render: (b) => <span className="font-mono">{b.bridge}</span> },
-          { header: 'State', render: (b) => <Badge tone={b.up ? 'green' : 'yellow'}>{b.up ? 'up' : 'down'}</Badge> },
+          { header: 'State', render: (b) => (b.up === undefined ? '-' : <Badge tone={b.up ? 'green' : 'yellow'}>{b.up ? 'up' : 'down'}</Badge>) },
           { header: 'Ports', render: (b) => b.ports ?? '-' },
-          { header: 'Flows', render: (b) => b.flows ?? '-' },
+          { header: 'OpenFlow rules', render: (b) => b.flows ?? '-' },
+          { header: 'Rule pps', render: (b) => (b.pps === undefined ? '-' : `${fmtNum(b.pps)}/s`) },
+          { header: 'Rule Bps', render: (b) => (b.bps === undefined ? '-' : `${fmtBytes(b.bps)}/s`) },
+          { header: 'Rules per table', render: (b) => <TableChips bridge={b} /> },
         ]} />
       </Card>
     </div>

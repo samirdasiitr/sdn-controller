@@ -3,7 +3,7 @@ import {
   ArrowUpDown, Cable, Plug, Cpu, GitBranch, Globe, Layers, Link2, Network, Router, Server, Settings2, Shield,
   type LucideIcon,
 } from 'lucide-react';
-import { getTopology, listNodes, listResources, queryRange } from '../api';
+import { getTopology, listNodes, listResources, queryMetric, queryRange } from '../api';
 import { countByResource, hostedByNode } from '../placement';
 import { useData } from '../context';
 import { RESOURCES, detailPath } from '../resources';
@@ -50,13 +50,17 @@ export default function Dashboard() {
   const hosted = hostedByNode(placementTopo.data);
   const spark = useData(async () => {
     const q = (s: string) => queryRange(s, 1800, 30).then((r) => r.flatMap(toPoints)).catch(() => []);
-    const [recon, flows, tx, queue] = await Promise.all([
+    const [recon, flows, tx, queue, offloaded] = await Promise.all([
       q('sum(rate(controller_runtime_reconcile_total[1m]))'),
       q('sum(sdn_ovs_bridge_flows)'),
       q('sum(rate(sdn_ovs_port_tx_bytes[1m]))'),
       q('sum(workqueue_depth)'),
+      q('sum(sdn_ovs_datapath_flows_offloaded)'),
     ]);
-    return { recon, flows, tx, queue };
+    const hw = await queryMetric('sdn_ovs_hw_offload_enabled').catch(() => []);
+    const hwNodes = hw.length;
+    const hwOn = hw.filter((s) => Number(s.value?.[1]) === 1).length;
+    return { recon, flows, tx, queue, offloaded, hwNodes, hwOn };
   });
 
   const groups = data ?? [];
@@ -66,9 +70,15 @@ export default function Dashboard() {
   const attention = all.filter((i) => classify(i) !== 'healthy');
   const recent = [...all].sort((a, b) => (b.metadata?.creationTimestamp ?? '').localeCompare(a.metadata?.creationTimestamp ?? '')).slice(0, 8);
 
-  const sparkCards: [string, string, any[], string][] = [
+  const hwHint = spark.data
+    ? spark.data.hwNodes > 0
+      ? `HW offload: ${spark.data.hwOn === 0 ? 'off' : 'on'} (${spark.data.hwOn} of ${spark.data.hwNodes} nodes)`
+      : 'HW offload: -'
+    : undefined;
+  const sparkCards: [string, string, any[], string, string?][] = [
     ['Reconciles / s', spark.data ? last(spark.data.recon).toFixed(2) : '-', spark.data?.recon ?? [], '#3b82f6'],
-    ['OVS flows', spark.data ? String(Math.round(last(spark.data.flows))) : '-', spark.data?.flows ?? [], '#22c55e'],
+    ['OpenFlow rules', spark.data ? String(Math.round(last(spark.data.flows))) : '-', spark.data?.flows ?? [], '#22c55e'],
+    ['Offloaded flows', spark.data ? String(Math.round(last(spark.data.offloaded))) : '-', spark.data?.offloaded ?? [], '#14b8a6', hwHint],
     ['TX throughput', spark.data ? FORMATS.bps(last(spark.data.tx)) : '-', spark.data?.tx ?? [], '#f59e0b'],
     ['Workqueue depth', spark.data ? String(Math.round(last(spark.data.queue))) : '-', spark.data?.queue ?? [], '#a855f7'],
   ];
@@ -135,11 +145,12 @@ export default function Dashboard() {
         </Card>
 
         <Card title="Live metrics (last 30m)" className="lg:col-span-2" bodyClass="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-          {sparkCards.map(([label, val, pts, color]) => (
+          {sparkCards.map(([label, val, pts, color, sub]) => (
             <div key={label} className="flex items-center justify-between rounded-lg bg-gray-50 p-3 dark:bg-gray-800/60">
               <div>
                 <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
                 <div className="text-xl font-bold text-gray-900 dark:text-gray-100">{val}</div>
+                {sub && <div className="text-[11px] text-gray-500 dark:text-gray-400">{sub}</div>}
               </div>
               <Sparkline points={pts} color={color} width={130} height={36} />
             </div>
