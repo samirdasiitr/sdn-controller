@@ -35,7 +35,7 @@ metadata: {name: sdn-agent}
 rules:
   - apiGroups: [vpc.sdncontroller.io, gateway.sdncontroller.io, service.sdncontroller.io, infra.sdncontroller.io, nfv.sdncontroller.io]
     resources: ["*"]
-    verbs: [get, list, watch, update, patch]
+    verbs: [get, list, watch, update, patch, create]
   - {apiGroups: [""], resources: [nodes], verbs: [get, list, watch]}
 ---
 apiVersion: rbac.authorization.k8s.io/v1

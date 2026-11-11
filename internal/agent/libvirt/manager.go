@@ -9,12 +9,12 @@ Samir Das <samiruor@gmail.com>. See the LICENSE file.
 package libvirt
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"sync"
 	"text/template"
-	"bytes"
 
 	pkgovs "github.com/sdncontroller/sdncontroller/pkg/ovs"
 )
@@ -47,9 +47,9 @@ type VMNetwork struct {
 
 // LibvirtManager manages OVS port creation and libvirt XML generation for VMs.
 type LibvirtManager struct {
-	client   *pkgovs.Client
-	logger   *slog.Logger
-	xmlTmpl  *template.Template
+	client  *pkgovs.Client
+	logger  *slog.Logger
+	xmlTmpl *template.Template
 
 	mu       sync.RWMutex
 	networks map[string]VMNetwork // keyed by "vmName/bridge"

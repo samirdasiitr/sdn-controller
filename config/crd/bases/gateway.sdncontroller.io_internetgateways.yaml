@@ -58,6 +58,12 @@ spec:
           spec:
             description: InternetGatewaySpec defines the desired state of InternetGateway.
             properties:
+              externalGateway:
+                description: |-
+                  externalGateway is the upstream router reachable on externalInterface. The node agent
+                  enslaves externalInterface into an OVS bridge, configures externalIPs[0] on it and
+                  forwards VPC traffic to this router (SNAT is done in OVS conntrack).
+                type: string
               externalIPs:
                 description: externalIPs are the public IP addresses on this gateway.
                 items:
@@ -67,6 +73,14 @@ spec:
               externalInterface:
                 description: externalInterface is the physical uplink interface name.
                 type: string
+              externalPrefixLength:
+                default: 24
+                description: externalPrefixLength is the prefix length of externalIPs[0]
+                  on the uplink network.
+                format: int32
+                maximum: 30
+                minimum: 8
+                type: integer
               ha:
                 description: ha configures high availability.
                 properties:

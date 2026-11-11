@@ -22,10 +22,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	infrav1alpha1 "github.com/sdncontroller/sdncontroller/api/infra/v1alpha1"
 	gwv1alpha1 "github.com/sdncontroller/sdncontroller/api/gateway/v1alpha1"
-	servicev1alpha1 "github.com/sdncontroller/sdncontroller/api/service/v1alpha1"
+	infrav1alpha1 "github.com/sdncontroller/sdncontroller/api/infra/v1alpha1"
 	nfvv1alpha1 "github.com/sdncontroller/sdncontroller/api/nfv/v1alpha1"
+	servicev1alpha1 "github.com/sdncontroller/sdncontroller/api/service/v1alpha1"
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
 	agentbond "github.com/sdncontroller/sdncontroller/internal/agent/bond"
 	agentdpu "github.com/sdncontroller/sdncontroller/internal/agent/dpu"

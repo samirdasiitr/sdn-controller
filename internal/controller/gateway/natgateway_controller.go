@@ -155,6 +155,20 @@ func (r *NATGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			active = n
 		}
 	}
+	// NAT gateway traffic leaves through the VPC's physical uplink, which the Internet Gateway's
+	// active node owns, so prefer that node.
+	var igws gatewayv1alpha1.InternetGatewayList
+	if err := r.List(ctx, &igws, client.InNamespace(natgw.Namespace)); err == nil {
+		for _, g := range igws.Items {
+			if g.Spec.VPCRef == natgw.Spec.VPCRef && g.DeletionTimestamp.IsZero() && g.Status.ActiveNode != "" {
+				for _, n := range nodes {
+					if n == g.Status.ActiveNode {
+						active = n
+					}
+				}
+			}
+		}
+	}
 	natgw.Status.ActiveNode = active
 	r.setCondition(&natgw, "NodeSelected", metav1.ConditionTrue, "NodeAssigned", fmt.Sprintf("Active: %s", active))
 

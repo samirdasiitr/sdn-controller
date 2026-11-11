@@ -132,6 +132,12 @@ func TestZonesDifferPerVPC(t *testing.T) {
 	}
 }
 
+func TestLocalVNicStaticDelivery(t *testing.T) {
+	o := Build(testInput())
+	has(t, o.Flows, "table=40,priority=110,dl_dst=52:54:00:00:00:10,actions=output:2")
+	has(t, o.Flows, "table=40,priority=110,dl_dst=52:54:00:00:00:20,actions=output:3")
+}
+
 func TestHairpinForwarding(t *testing.T) {
 	o := Build(testInput())
 	has(t, o.Flows, "table=40,priority=120,in_port=7,dl_dst=52:54:00:00:00:99,actions=IN_PORT")
@@ -310,4 +316,22 @@ func TestFirewallSubnetRefRules(t *testing.T) {
 	if !strings.Contains(w, `dstSubnetRef "nope" is not a subnet`) || !strings.Contains(w, "mutually exclusive") {
 		t.Errorf("invalid subnet refs must be reported: %s", w)
 	}
+}
+
+func TestL3NativeRouting(t *testing.T) {
+	in := testInput()
+	in.VPCName, in.VPCNamespace = "v", "d"
+	in.Gateways = map[string]string{"web": "10.0.1.1", "app": "10.0.2.1"}
+	in.IPToSubnet = map[string]string{"10.0.1.10": "web"}
+	in.Uplink = &Uplink{ActiveHere: true, PatchPort: 9, ExtMAC: "aa:bb:cc:00:00:01", UpstreamMAC: "aa:bb:cc:00:00:02", ExtIP: "192.168.160.11"}
+	o := Build(in)
+	has(t, o.Flows, "arp,arp_tpa=10.0.1.1,arp_op=1,actions=move:NXM_OF_ETH_SRC[]->NXM_OF_ETH_DST[],set_field:0a:5d:0a:00:01:01->eth_src")
+	has(t, o.Flows, "icmp,icmp_type=8,nw_dst=10.0.1.1,actions=")
+	has(t, o.Flows, "table=40,priority=100,ip,dl_dst=0a:5d:0a:00:02:01,nw_dst=10.0.1.10,actions=dec_ttl,set_field:0a:5d:0a:00:01:01->eth_src,set_field:52:54:00:00:00:10->eth_dst,resubmit(,40)")
+	has(t, o.Flows, "table=40,priority=105,in_port=9,reg4=0,ip,nw_dst=10.0.1.10,actions=load:1->NXM_NX_REG4[],dec_ttl")
+	has(t, o.Flows, "table=40,priority=90,ip,dl_dst=0a:5d:0a:00:01:01,actions=dec_ttl,set_field:aa:bb:cc:00:00:01->eth_src,set_field:aa:bb:cc:00:00:02->eth_dst,output:9")
+	has(t, o.Flows, "nat(src=192.168.160.11)")
+	// non-gateway nodes forward outbound traffic to the IGW node
+	in.Uplink = &Uplink{TunnelToIGW: 7}
+	has(t, Build(in).Flows, "table=40,priority=90,ip,dl_dst=0a:5d:0a:00:01:01,actions=output:7")
 }

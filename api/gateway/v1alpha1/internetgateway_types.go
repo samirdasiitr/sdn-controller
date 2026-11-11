@@ -43,6 +43,19 @@ type InternetGatewaySpec struct {
 	// +kubebuilder:validation:Required
 	ExternalInterface string `json:"externalInterface"`
 
+	// externalGateway is the upstream router reachable on externalInterface. The node agent
+	// enslaves externalInterface into an OVS bridge, configures externalIPs[0] on it and
+	// forwards VPC traffic to this router (SNAT is done in OVS conntrack).
+	// +optional
+	ExternalGateway string `json:"externalGateway,omitempty"`
+
+	// externalPrefixLength is the prefix length of externalIPs[0] on the uplink network.
+	// +kubebuilder:default=24
+	// +kubebuilder:validation:Minimum=8
+	// +kubebuilder:validation:Maximum=30
+	// +optional
+	ExternalPrefixLength int32 `json:"externalPrefixLength,omitempty"`
+
 	// externalIPs are the public IP addresses on this gateway.
 	// +kubebuilder:validation:MinItems=1
 	ExternalIPs []string `json:"externalIPs"`

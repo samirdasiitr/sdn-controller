@@ -72,9 +72,12 @@ func (r *Reconciler) bindVNics(ctx context.Context, v *vpcv1alpha1.VPC, bridge s
 			}
 			continue
 		}
-		cur, err := ovsOut(ctx, "ovs-vsctl", "port-to-br", port)
-		if err != nil {
-			continue
+		cur := bridge // the bridge's own local port has no Port row (port-to-br fails for it)
+		if port != bridge {
+			var err error
+			if cur, err = ovsOut(ctx, "ovs-vsctl", "port-to-br", port); err != nil {
+				continue
+			}
 		}
 		if cur != bridge {
 			r.log.Info("moving VNic port to VPC bridge", "vnic", vn.Name, "port", port, "from", cur, "to", bridge)
@@ -87,7 +90,9 @@ func (r *Reconciler) bindVNics(ctx context.Context, v *vpcv1alpha1.VPC, bridge s
 				continue
 			}
 		}
-		_ = sh(ctx, "ovs-vsctl", "set", "interface", port, "external_ids:sdn-vnic="+vn.Namespace+"/"+vn.Name)
+		if port != bridge {
+			_ = sh(ctx, "ovs-vsctl", "set", "interface", port, "external_ids:sdn-vnic="+vn.Namespace+"/"+vn.Name)
+		}
 		ofs, err := ovsOut(ctx, "ovs-vsctl", "get", "interface", port, "ofport")
 		ofport, perr := strconv.Atoi(ofs)
 		if err != nil || perr != nil || ofport <= 0 {
@@ -95,7 +100,7 @@ func (r *Reconciler) bindVNics(ctx context.Context, v *vpcv1alpha1.VPC, bridge s
 		}
 		bound = append(bound, pipeline.Port{
 			Key: vn.Namespace + "/" + vn.Name, IP: vn.Status.IPAddress, MAC: vn.Status.MACAddress, Subnet: vn.Spec.SubnetRef,
-			FirewallRef: vn.Spec.FirewallRef, OFPort: ofport, PortSecurity: vn.Spec.PortSecurity == nil || *vn.Spec.PortSecurity,
+			FirewallRef: vn.Spec.FirewallRef, OFPort: ofport, Infra: vn.Spec.Attachment != nil && vn.Spec.Attachment.Kind == vpcv1alpha1.VNicAttachOther && vn.Spec.Attachment.Name == "host", PortSecurity: vn.Spec.PortSecurity == nil || *vn.Spec.PortSecurity,
 		})
 		r.reportBound(ctx, vn, bridge, port, int32(ofport))
 	}

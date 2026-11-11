@@ -93,42 +93,30 @@ func (r *Reconciler) reconcileVPC(ctx context.Context, v *vpcv1alpha1.VPC) error
 	if err := r.c.List(ctx, &igws, client.InNamespace(v.Namespace)); err != nil {
 		return err
 	}
-	// One router node per VPC owns the gateway addresses (centralized routing);
-	// duplicating them on every node would let a node without NAT answer ARP for
-	// the gateway and leak un-NATed traffic.
+	// The prober runs on one node per VPC (the Internet Gateway node, else the first attached node).
 	isRouter := routerNode(v, igws.Items) == r.node
 
-	// Subnet gateway addresses and route flows.
 	var subnets vpcv1alpha1.SubnetList
 	if err := r.c.List(ctx, &subnets, client.InNamespace(v.Namespace)); err != nil {
 		return err
 	}
 	var cidrs []string
-	wantAddrs := map[string]bool{}
 	vpcSubnets := map[string]bool{}
 	for _, sn := range subnets.Items {
 		if sn.Spec.VPCRef == v.Name {
 			vpcSubnets[sn.Name] = true
 		}
-		if sn.Spec.VPCRef != v.Name || sn.Status.Phase != vpcv1alpha1.SubnetPhaseReady || sn.Status.Gateway == "" {
-			continue
-		}
-		_, ipnet, err := net.ParseCIDR(sn.Spec.CIDR)
-		if err != nil {
-			continue
-		}
-		ones, _ := ipnet.Mask.Size()
-		addr := fmt.Sprintf("%s/%d", sn.Status.Gateway, ones)
-		cidrs = append(cidrs, sn.Spec.CIDR)
-		if !isRouter {
-			continue
-		}
-		wantAddrs[addr] = true
-		if err := sh(ctx, "ip", "addr", "replace", addr, "dev", bridge); err != nil {
-			r.log.Error("set gateway address", "bridge", bridge, "addr", addr, "error", err)
+		if sn.Spec.VPCRef == v.Name && sn.Status.Phase == vpcv1alpha1.SubnetPhaseReady {
+			cidrs = append(cidrs, sn.Spec.CIDR)
 		}
 	}
+	// Routing is done by OVS flows (virtual gateways). The host only gets a VNic like any other member.
+	wantAddrs := map[string]bool{}
+	if addr := r.ensureHostVNic(ctx, v, bridge, subnets.Items); addr != "" {
+		wantAddrs[addr] = true
+	}
 	r.pruneAddrs(ctx, bridge, wantAddrs)
+	r.cleanupLegacyHostNAT(ctx, v, bridge)
 
 	// Tunnels: one port per other attached node, all keyed with the VPC's VNI.
 	wantPorts := map[string]bool{}
@@ -173,15 +161,7 @@ func (r *Reconciler) reconcileVPC(ctx context.Context, v *vpcv1alpha1.VPC) error
 		return err
 	}
 
-	// Host forwarding for the VPC bridge.
-	if isRouter {
-		_ = sh(ctx, "sysctl", "-w", "net.ipv4.ip_forward=1")
-	}
-	ensureRule(ctx, "filter", "FORWARD", true, "-i", bridge, "-j", "ACCEPT")
-	ensureRule(ctx, "filter", "FORWARD", true, "-o", bridge, "-j", "ACCEPT")
-
-	// Internet Gateway: NAT VPC egress when this node is the active gateway.
-	return r.reconcileIGW(ctx, v, igws.Items)
+	return nil
 }
 
 // routerNode picks the node that routes for the VPC: the active Internet
@@ -202,32 +182,6 @@ func routerNode(v *vpcv1alpha1.VPC, igws []gwv1alpha1.InternetGateway) string {
 		}
 	}
 	return first
-}
-
-func (r *Reconciler) reconcileIGW(ctx context.Context, v *vpcv1alpha1.VPC, igws []gwv1alpha1.InternetGateway) error {
-	comment := "sdn-igw-" + v.Name
-	iface := ""
-	for _, g := range igws {
-		if g.Spec.VPCRef == v.Name && g.DeletionTimestamp.IsZero() &&
-			g.Status.Phase == gwv1alpha1.GatewayPhaseReady && g.Status.ActiveNode == r.node {
-			iface = uplink(ctx, g.Spec.ExternalInterface)
-			break
-		}
-	}
-	// Remove stale NAT rules for this VPC first, then add the wanted one.
-	for _, line := range listRules(ctx, "nat", "POSTROUTING", comment) {
-		if iface == "" || !strings.Contains(line, "-o "+iface+" ") {
-			_ = sh(ctx, "iptables", append([]string{"-t", "nat", "-D", "POSTROUTING"}, strings.Fields(strings.TrimPrefix(line, "-A POSTROUTING "))...)...)
-		}
-	}
-	if iface == "" {
-		return nil
-	}
-	ensureRule(ctx, "nat", "POSTROUTING", false,
-		"-s", v.Spec.CIDR, "!", "-d", v.Spec.CIDR, "-o", iface,
-		"-m", "comment", "--comment", comment, "-j", "MASQUERADE")
-	r.log.Info("IGW NAT active", "vpc", v.Name, "cidr", v.Spec.CIDR, "uplink", iface)
-	return nil
 }
 
 func (r *Reconciler) teardown(ctx context.Context, v *vpcv1alpha1.VPC, att *vpcv1alpha1.VPCNodeAttachment) error {

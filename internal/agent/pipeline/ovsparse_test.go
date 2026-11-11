@@ -13,7 +13,17 @@ func TestFlowsParseWithOVS(t *testing.T) {
 	if os.Getenv("OVS_PARSE_TEST") == "" {
 		t.Skip("set OVS_PARSE_TEST=1 on a host with Open vSwitch")
 	}
-	for name, in := range map[string]Input{"services": testInput(), "isolation": isolatedInput(), "natfull": natInput("FullNAT"), "natdnat": natInput("DNAT")} {
+	l3 := testInput()
+	l3.VPCName, l3.VPCNamespace = "v", "d"
+	l3.Gateways = map[string]string{"web": "10.0.1.1", "app": "10.0.2.1"}
+	l3.IPToSubnet = map[string]string{"10.0.1.10": "web", "10.0.1.11": "web"}
+	l3.RemoteVIPs = map[string]int{"10.0.1.200": 7}
+	l3.HostIPs = []string{"10.0.2.2"}
+	l3.InterSubnetDeny = true
+	l3.Uplink = &Uplink{ActiveHere: true, PatchPort: 9, ExtMAC: "aa:bb:cc:00:00:01", UpstreamMAC: "aa:bb:cc:00:00:02", ExtIP: "192.168.160.11"}
+	l3b := l3
+	l3b.Uplink = &Uplink{TunnelToIGW: 7}
+	for name, in := range map[string]Input{"l3uplink": l3, "l3remote": l3b, "services": testInput(), "isolation": isolatedInput(), "natfull": natInput("FullNAT"), "natdnat": natInput("DNAT")} {
 		t.Run(name, func(t *testing.T) {
 			o := Build(in)
 			const br = "br-parsetest"

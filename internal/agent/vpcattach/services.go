@@ -44,13 +44,25 @@ func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, br
 		}
 	}
 
-	in := pipeline.Input{VNI: int(v.Status.AllocatedVNI), InterSubnetDeny: v.Spec.InterSubnetPolicy != vpcv1alpha1.InterSubnetAllow, VPCCIDRs: append([]string{v.Spec.CIDR}, v.Spec.SecondaryCIDRs...),
+	in := pipeline.Input{VPCName: v.Name, VPCNamespace: v.Namespace, Gateways: map[string]string{}, IPToSubnet: map[string]string{}, VNI: int(v.Status.AllocatedVNI), InterSubnetDeny: v.Spec.InterSubnetPolicy != vpcv1alpha1.InterSubnetAllow, VPCCIDRs: append([]string{v.Spec.CIDR}, v.Spec.SecondaryCIDRs...),
 		Subnets: map[string]string{}, IPToMAC: map[string]string{}, Ports: bound}
 	for _, sn := range subnets.Items {
 		if sn.Spec.VPCRef == v.Name {
 			in.Subnets[sn.Name] = sn.Spec.CIDR
+			if sn.Status.Gateway != "" && sn.Status.Phase == vpcv1alpha1.SubnetPhaseReady {
+				in.Gateways[sn.Name] = sn.Status.Gateway
+			}
 		}
 	}
+	for _, vn := range vnics.Items {
+		if vn.Spec.Attachment != nil && vn.Spec.Attachment.Kind == vpcv1alpha1.VNicAttachOther && vn.Spec.Attachment.Name == "host" &&
+			vn.Status.IPAddress != "" && vn.DeletionTimestamp.IsZero() {
+			if _, ok := in.Subnets[vn.Spec.SubnetRef]; ok {
+				in.HostIPs = append(in.HostIPs, vn.Status.IPAddress)
+			}
+		}
+	}
+	sort.Strings(in.HostIPs)
 	seen := map[string]bool{}
 	for _, rt := range v.Status.Routes {
 		if !seen[rt.Destination] {
@@ -63,6 +75,7 @@ func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, br
 		if vn.Status.IPAddress != "" && vn.Status.MACAddress != "" {
 			if _, ok := in.Subnets[vn.Spec.SubnetRef]; ok {
 				in.IPToMAC[vn.Status.IPAddress] = vn.Status.MACAddress
+				in.IPToSubnet[vn.Status.IPAddress] = vn.Spec.SubnetRef
 			}
 		}
 	}
@@ -112,6 +125,57 @@ func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, br
 		}
 	}
 	in.Firewalls, in.LBs, in.NATs = myFWs, myLBs, myNATs
+
+	// VIPs of load balancers that are not programmed here are reached through the nodes that have them.
+	in.RemoteVIPs = map[string]int{}
+	for _, lb := range lbs.Items {
+		if lb.Spec.VPCRef != v.Name || !lb.DeletionTimestamp.IsZero() || contains(lb.Status.Nodes, r.node) {
+			continue
+		}
+		for _, peer := range v.Status.AttachedNodes {
+			if contains(lb.Status.Nodes, peer.NodeName) && peer.NodeName != r.node && peer.TunnelIP != "" {
+				if of, err := r.ovs.OFPort(ctx, portName(v.Name, peer.TunnelIP)); err == nil {
+					in.RemoteVIPs[lb.Spec.Frontend.IP] = of
+					break
+				}
+			}
+		}
+	}
+
+	// Internet Gateway uplink: the active gateway node owns the physical NIC (an OVS bridge),
+	// the others forward outbound traffic to it through the tunnel.
+	var igwList gwv1alpha1.InternetGatewayList
+	if err := r.c.List(ctx, &igwList, client.InNamespace(v.Namespace)); err != nil {
+		return err
+	}
+	var activeIGW *gwv1alpha1.InternetGateway
+	for i := range igwList.Items {
+		g := &igwList.Items[i]
+		if g.Spec.VPCRef == v.Name && g.DeletionTimestamp.IsZero() && g.Status.Phase == gwv1alpha1.GatewayPhaseReady && g.Status.ActiveNode != "" {
+			activeIGW = g
+			break
+		}
+	}
+	var uplinkErr error
+	switch {
+	case activeIGW != nil && activeIGW.Status.ActiveNode == r.node:
+		in.Uplink, uplinkErr = r.ensureUplink(ctx, v, bridge, activeIGW, myNATs, in)
+		if uplinkErr != nil {
+			r.log.Error("uplink", "vpc", v.Name, "error", uplinkErr)
+		}
+	case activeIGW != nil:
+		r.removeUplink(ctx, v, bridge)
+		in.Uplink = &pipeline.Uplink{}
+		for _, peer := range v.Status.AttachedNodes {
+			if peer.NodeName == activeIGW.Status.ActiveNode && peer.TunnelIP != "" {
+				if of, err := r.ovs.OFPort(ctx, portName(v.Name, peer.TunnelIP)); err == nil {
+					in.Uplink.TunnelToIGW = of
+				}
+			}
+		}
+	default:
+		r.removeUplink(ctx, v, bridge)
+	}
 
 	// Runtime state for load balancers: published backend health/MACs, live connection counts.
 	vnicIPs := map[string]bool{}
@@ -206,7 +270,6 @@ func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, br
 		r.log.Error("programming pipeline", "vpc", v.Name, "error", applyErr)
 	}
 
-	r.hostNAT(ctx, v, bridge, myNATs, applyErr == nil)
 	r.reportEnforcement(ctx, bridge, out, myFWs, myLBs, myNATs, applyErr)
 	return applyErr
 }
@@ -384,42 +447,5 @@ func (r *Reconciler) patchStatus(ctx context.Context, obj client.Object, orig cl
 	}
 	if err := r.c.Status().Patch(ctx, obj, client.MergeFrom(orig)); err != nil {
 		r.log.Error("report enforcement", "object", obj.GetName(), "error", err)
-	}
-}
-
-// hostNAT plumbs the host side of a NAT gateway: SNAT'ed replies carry the external IP as
-// destination, so that address is routed back into the VPC bridge (where conntrack un-NATs
-// them), and egress traffic from the external IP is masqueraded to the uplink.
-func (r *Reconciler) hostNAT(ctx context.Context, v *vpcv1alpha1.VPC, bridge string, nats []gwv1alpha1.NATGateway, ok bool) {
-	want := map[string]bool{}
-	if ok {
-		for _, n := range nats {
-			want[n.Spec.ExternalIP] = true
-			_ = sh(ctx, "ip", "route", "replace", n.Spec.ExternalIP+"/32", "dev", bridge, "proto", natRouteProto)
-			_ = sh(ctx, "ip", "neigh", "replace", n.Spec.ExternalIP, "lladdr", pipeline.VIPMAC(n.Spec.ExternalIP), "dev", bridge, "nud", "permanent")
-			ensureRule(ctx, "nat", "POSTROUTING", false, "-s", n.Spec.ExternalIP+"/32", "-o", uplink(ctx, ""),
-				"-m", "comment", "--comment", "sdn-natgw-"+v.Name, "-j", "MASQUERADE")
-		}
-	}
-	// Remove routes and masquerade rules of NAT gateways that are gone or moved.
-	if out, err := ovsOut(ctx, "ip", "route", "show", "dev", bridge, "proto", natRouteProto); err == nil {
-		for _, l := range strings.Split(out, "\n") {
-			if f := strings.Fields(l); len(f) > 0 {
-				ip := strings.TrimSuffix(f[0], "/32")
-				if !want[ip] {
-					_ = sh(ctx, "ip", "route", "del", ip+"/32", "dev", bridge, "proto", natRouteProto)
-					_ = sh(ctx, "ip", "neigh", "del", ip, "dev", bridge)
-				}
-			}
-		}
-	}
-	for _, line := range listRules(ctx, "nat", "POSTROUTING", "sdn-natgw-"+v.Name) {
-		keep := false
-		for ip := range want {
-			keep = keep || strings.Contains(line, "-s "+ip+"/32")
-		}
-		if !keep {
-			_ = sh(ctx, "iptables", append([]string{"-t", "nat", "-D", "POSTROUTING"}, strings.Fields(strings.TrimPrefix(line, "-A POSTROUTING "))...)...)
-		}
 	}
 }

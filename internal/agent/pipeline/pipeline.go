@@ -46,14 +46,26 @@ type Port struct {
 	FirewallRef  string
 	OFPort       int
 	PortSecurity bool
+	Infra        bool // node management VNic: exempt from ACLs and isolation
 }
 
 // Input is everything needed to compile the pipeline of one VPC bridge on one node.
 type Input struct {
 	// VNI selects conntrack zone ranges. Zones are global to the kernel datapath, so
 	// VPCs (which may use overlapping CIDRs) must not share them.
-	VNI      int
-	VPCCIDRs []string
+	VNI                   int
+	VPCCIDRs              []string
+	VPCName, VPCNamespace string
+	// Gateways maps subnet name -> gateway IP (virtual router addresses answered by OVS).
+	Gateways map[string]string
+	// IPToSubnet maps every VNic IP to its subnet name.
+	IPToSubnet map[string]string
+	// RemoteVIPs maps a load-balancer VIP programmed on another node to the tunnel port towards it.
+	RemoteVIPs map[string]int
+	// Uplink is the Internet Gateway path (nil: the VPC has no way out).
+	Uplink *Uplink
+	// HostIPs are infrastructure addresses (node management VNics) exempt from ACL and isolation.
+	HostIPs []string
 	// InterSubnetDeny blocks traffic between different subnets of the VPC unless a Firewall rule
 	// allows it (VPC spec.interSubnetPolicy, default Deny).
 	InterSubnetDeny bool
@@ -123,9 +135,10 @@ func (in Input) lbZoneBase() int        { return 40000 + (in.VNI%100)*100 }
 func (in Input) natZoneBase() int       { return 50000 + (in.VNI%100)*100 }
 
 type builder struct {
-	in     Input
-	out    Output
-	cookie uint64
+	vpcBypass bool
+	in        Input
+	out       Output
+	cookie    uint64
 }
 
 func Build(in Input) Output {
@@ -135,6 +148,8 @@ func Build(in Input) Output {
 	b.firewalls()
 	b.loadBalancers()
 	b.natGateways()
+	b.igw()
+	b.l3()
 	return b.out
 }
 
@@ -179,6 +194,14 @@ func (b *builder) base() {
 		macs = append(macs, m)
 	}
 	sort.Strings(macs)
+	// Local VNics are delivered with static unicast flows: no dependency on MAC learning.
+	for _, p := range b.in.Ports {
+		out := fmt.Sprintf("%d", p.OFPort)
+		if p.OFPort == 65534 {
+			out = "LOCAL"
+		}
+		b.add("table=%d,priority=110,dl_dst=%s,actions=output:%s", tForward, p.MAC, out)
+	}
 	for _, m := range macs {
 		tp := b.in.RemoteMACs[m]
 		b.add("table=%d,priority=120,in_port=%d,dl_dst=%s,actions=IN_PORT", tForward, tp, m)
@@ -223,6 +246,9 @@ func (b *builder) firewalls() {
 	byKey := map[string]*policy{}
 	portPolicy := map[int]*policy{}
 	for _, p := range b.in.Ports {
+		if p.Infra {
+			continue
+		}
 		var fws []servicev1alpha1.Firewall
 		for _, fw := range b.in.Firewalls {
 			if fw.Name == p.FirewallRef || len(fw.Spec.SubnetRefs) == 0 || contains(fw.Spec.SubnetRefs, p.Subnet) {
@@ -297,6 +323,17 @@ func (b *builder) policyFlows(pol *policy) {
 			b.add("table=%d,priority=65535,ct_state=+trk+inv,reg1=%d,actions=drop", tbl.table, pol.id)
 			b.add("table=%d,priority=100,ct_state=+trk+est,reg1=%d,actions=ct_clear,resubmit(,%d)", tbl.table, pol.id, tbl.next)
 			b.add("table=%d,priority=100,ct_state=+trk+rel,reg1=%d,actions=ct_clear,resubmit(,%d)", tbl.table, pol.id, tbl.next)
+		}
+		if tbl.dir == servicev1alpha1.FirewallDirectionIngress {
+			// node management addresses (health probes, operator access) are always allowed in; they go
+			// through conntrack like everything else so replies are tracked.
+			for _, ip := range b.in.HostIPs {
+				ct := ""
+				if pol.stateful {
+					ct = "ct_state=+trk+new,"
+				}
+				b.add("table=%d,priority=65534,%sreg1=%d,ip,nw_src=%s,actions=%s", tbl.table, ct, pol.id, ip, b.verdict(pol, true, tbl.next))
+			}
 		}
 		for _, fw := range pol.fws {
 			rep := b.report("Firewall", fw.Namespace, fw.Name)
@@ -710,7 +747,6 @@ func containsIP(cidr, ip string) bool {
 func (b *builder) natGateways() {
 	nats := append([]gwv1alpha1.NATGateway(nil), b.in.NATs...)
 	sort.Slice(nats, func(i, j int) bool { return nats[i].Namespace+"/"+nats[i].Name < nats[j].Namespace+"/"+nats[j].Name })
-	vpcCIDRDone := false
 	for idx, nat := range nats {
 		rep := b.report("NATGateway", nat.Namespace, nat.Name)
 		typ := nat.Spec.Type
@@ -732,11 +768,11 @@ func (b *builder) natGateways() {
 		if pr := nat.Spec.PortRange; pr != nil && pr.Start > 0 && pr.End >= pr.Start {
 			natSpec = fmt.Sprintf("nat(src=%s:%d-%d)", ext, pr.Start, pr.End)
 		}
-		if !vpcCIDRDone {
+		if !b.vpcBypass {
 			for _, c := range b.in.VPCCIDRs {
 				b.add("table=%d,priority=300,ip,nw_dst=%s,actions=resubmit(,%d)", tNAT, c, tIngressDispatch)
 			}
-			vpcCIDRDone = true
+			b.vpcBypass = true
 		}
 		// The host reaches the external IP through a permanent neighbor entry with this virtual
 		// MAC; after un-NAT the frame still carries it, so restore the VM's real MAC.
