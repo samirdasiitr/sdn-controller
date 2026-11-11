@@ -27,6 +27,7 @@ import (
 )
 
 var (
+	agentPort     int
 	dynamicClient dynamic.Interface
 	listenAddr    string
 	staticDir     string
@@ -66,6 +67,7 @@ var kindToResource = map[string]string{
 func main() {
 	flag.StringVar(&listenAddr, "listen", ":3001", "API server listen address")
 	flag.StringVar(&staticDir, "static", "", "Path to static frontend files (optional)")
+	flag.IntVar(&agentPort, "agent-port", 9101, "Node agent HTTP port (OVS topology/flows proxy)")
 	flag.StringVar(&prometheusURL, "prometheus", "http://localhost:9090", "Prometheus base URL for /api/metrics proxy")
 	flag.Parse()
 
@@ -96,6 +98,7 @@ func main() {
 	mux.HandleFunc("/api/namespaces", handleNamespaces)
 	mux.HandleFunc("/api/nodes", handleNodes)
 	mux.HandleFunc("/api/nodes/", handleNodeDetail)
+	mux.HandleFunc("/api/tags", handleTags)
 	mux.HandleFunc("/api/metrics/query", handleMetricsProxy("query"))
 	mux.HandleFunc("/api/metrics/query_range", handleMetricsProxy("query_range"))
 
@@ -352,6 +355,7 @@ func handleTopology(w http.ResponseWriter, r *http.Request) {
 				"resource":          resource,
 				"spec":              spec,
 				"status":            status,
+				"labels":            item.GetLabels(),
 				"deletionTimestamp": item.GetDeletionTimestamp(),
 			})
 
@@ -549,12 +553,17 @@ func handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 405, "method not allowed")
 		return
 	}
-	name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/nodes/"), "/")
+	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/nodes/"), "/")
+	name, sub, _ := strings.Cut(rest, "/")
 	if name == "" {
 		handleNodes(w, r)
 		return
 	}
 	ctx := context.Background()
+	if sub == "ovs" || sub == "ovs/topology" || sub == "ovs/flows" {
+		proxyAgent(w, r, name, sub)
+		return
+	}
 	n, err := dynamicClient.Resource(nodesGVR).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		k8sError(w, err)
@@ -564,6 +573,37 @@ func handleNodeDetail(w http.ResponseWriter, r *http.Request) {
 	hosted := hostedOn(ctx, name)
 	out["hosted"] = hosted
 	jsonResponse(w, 200, out)
+}
+
+// proxyAgent forwards read-only OVS queries to the node agent on the node's internal IP.
+//
+//	GET /api/nodes/{name}/ovs            -> agent /ovs/topology (bridges, ports, uplinks, NAT)
+//	GET /api/nodes/{name}/ovs/flows?bridge=br -> agent /ovs/flows (OpenFlow rules)
+func proxyAgent(w http.ResponseWriter, r *http.Request, node, sub string) {
+	n, err := dynamicClient.Resource(nodesGVR).Get(r.Context(), node, metav1.GetOptions{})
+	if err != nil {
+		k8sError(w, err)
+		return
+	}
+	ip, _ := nodeInfo(*n)["internalIP"].(string)
+	if ip == "" {
+		jsonError(w, 502, "node has no internal IP")
+		return
+	}
+	path := "/ovs/topology"
+	if sub == "ovs/flows" {
+		path = "/ovs/flows?bridge=" + url.QueryEscape(r.URL.Query().Get("bridge"))
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://%s:%d%s", ip, agentPort, path))
+	if err != nil {
+		jsonError(w, 502, "node agent unreachable: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, io.LimitReader(resp.Body, 32<<20))
 }
 
 func hostedOn(ctx context.Context, node string) []map[string]interface{} {
@@ -655,6 +695,85 @@ func handleMetricsProxy(endpoint string) http.HandlerFunc {
 		w.WriteHeader(resp.StatusCode)
 		io.Copy(w, resp.Body)
 	}
+}
+
+// tagLabelPrefix is the label prefix used to store UI "tags" on resources.
+const tagLabelPrefix = "tags.sdncontroller.io/"
+
+// GET /api/tags - aggregate tags (labels under tags.sdncontroller.io/) across all resource types.
+// Returns [{key,value,count,resources:[{resource,kind,namespace,name}]}]
+func handleTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, 405, "method not allowed")
+		return
+	}
+	ctx := context.Background()
+	type tagRef struct {
+		Resource  string `json:"resource"`
+		Kind      string `json:"kind"`
+		Namespace string `json:"namespace"`
+		Name      string `json:"name"`
+	}
+	type tagEntry struct {
+		Key       string   `json:"key"`
+		Value     string   `json:"value"`
+		Count     int      `json:"count"`
+		Resources []tagRef `json:"resources"`
+	}
+	agg := map[string]*tagEntry{}
+	resources := make([]string, 0, len(gvrMap))
+	for resource := range gvrMap {
+		resources = append(resources, resource)
+	}
+	sort.Strings(resources)
+	for _, resource := range resources {
+		list, err := dynamicClient.Resource(gvrMap[resource]).Namespace("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			continue
+		}
+		for _, item := range list.Items {
+			for lk, lv := range item.GetLabels() {
+				if !strings.HasPrefix(lk, tagLabelPrefix) {
+					continue
+				}
+				key := strings.TrimPrefix(lk, tagLabelPrefix)
+				id := key + "\x00" + lv
+				e, ok := agg[id]
+				if !ok {
+					e = &tagEntry{Key: key, Value: lv}
+					agg[id] = e
+				}
+				e.Count++
+				e.Resources = append(e.Resources, tagRef{
+					Resource:  resource,
+					Kind:      item.GetKind(),
+					Namespace: item.GetNamespace(),
+					Name:      item.GetName(),
+				})
+			}
+		}
+	}
+	out := make([]*tagEntry, 0, len(agg))
+	for _, e := range agg {
+		sort.Slice(e.Resources, func(i, j int) bool {
+			a, b := e.Resources[i], e.Resources[j]
+			if a.Resource != b.Resource {
+				return a.Resource < b.Resource
+			}
+			if a.Namespace != b.Namespace {
+				return a.Namespace < b.Namespace
+			}
+			return a.Name < b.Name
+		})
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Key != out[j].Key {
+			return out[i].Key < out[j].Key
+		}
+		return out[i].Value < out[j].Value
+	})
+	jsonResponse(w, 200, out)
 }
 
 // GET /api/namespaces - list namespaces

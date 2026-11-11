@@ -21,14 +21,20 @@ spec:
           env:
             - name: NODE_NAME
               valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+            - name: VNF_SSH_AUTHORIZED_KEY
+              valueFrom: {configMapKeyRef: {name: sdn-agent-vnf, key: authorized-key, optional: true}}
           securityContext: {privileged: true}
           ports: [{name: metrics, containerPort: 9101, hostPort: 9101}]
           volumeMounts:
             - {name: ovs-run, mountPath: /run/openvswitch}
             - {name: xtables-lock, mountPath: /run/xtables.lock}
             - {name: modules, mountPath: /lib/modules, readOnly: true}
+            - {name: libvirt-run, mountPath: /run/libvirt}
+            - {name: libvirt-images, mountPath: /var/lib/libvirt/images}
           resources: {requests: {cpu: 50m, memory: 64Mi}}
       volumes:
         - {name: ovs-run, hostPath: {path: /run/openvswitch, type: Directory}}
         - {name: xtables-lock, hostPath: {path: /run/xtables.lock, type: FileOrCreate}}
         - {name: modules, hostPath: {path: /lib/modules}}
+        - {name: libvirt-run, hostPath: {path: /run/libvirt, type: DirectoryOrCreate}}
+        - {name: libvirt-images, hostPath: {path: /var/lib/libvirt/images, type: DirectoryOrCreate}}

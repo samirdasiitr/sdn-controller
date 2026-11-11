@@ -79,6 +79,7 @@ export interface TopologyNode {
   resource: string;
   spec?: any;
   status?: any;
+  labels?: Record<string, string>;
   external?: boolean;
   deletionTimestamp?: string | null;
 }
@@ -160,4 +161,84 @@ export interface K8sNodeDetail extends K8sNode {
 
 export async function getNode(name: string): Promise<K8sNodeDetail> {
   return request<K8sNodeDetail>(`${API}/nodes/${encodeURIComponent(name)}`);
+}
+
+/* ---------- Node agent OVS proxies ---------- */
+
+export interface OvsPortStats {
+  rxBytes: number; txBytes: number; rxPackets: number; txPackets: number;
+  rxDropped: number; txDropped: number; rxErrors: number; txErrors: number;
+}
+export interface OvsPort {
+  name: string;
+  ofport: number;
+  type: string;
+  role: 'internal' | 'tunnel' | 'workload' | 'uplink' | 'patch' | string;
+  mac?: string;
+  linkState?: string;
+  mtu?: number;
+  options?: Record<string, string>;
+  remoteIP?: string;
+  vni?: string;
+  peer?: string;
+  vnic?: string; // "ns/name"
+  stats?: OvsPortStats;
+}
+export interface OvsBridgeInfo {
+  name: string;
+  datapathType?: string;
+  externalIDs?: Record<string, string>;
+  addresses?: string[];
+  flows?: number;
+  ports: OvsPort[];
+}
+export interface OvsUplink {
+  name: string;
+  mac?: string;
+  mtu?: number;
+  state?: string;
+  addresses?: string[];
+  defaultRoute?: boolean;
+  physical?: boolean;
+}
+export interface OvsNat {
+  vpc: string;
+  source: string;
+  uplink: string;
+}
+export interface NodeOvsTopology {
+  node: string;
+  time?: string;
+  ovsVersion?: string;
+  hwOffload?: boolean;
+  uplinks: OvsUplink[];
+  bridges: OvsBridgeInfo[];
+  nat: OvsNat[];
+}
+
+export async function getNodeOvs(node: string): Promise<NodeOvsTopology> {
+  return request<NodeOvsTopology>(`${API}/nodes/${encodeURIComponent(node)}/ovs`);
+}
+
+export interface OvsFlow {
+  table: number;
+  priority: number;
+  cookie: string;
+  match: string;
+  actions: string;
+  packets: number;
+  bytes: number;
+  duration: number;
+  idleAge: number;
+}
+export interface OvsFlowDump {
+  bridge: string;
+  node?: string;
+  flows: OvsFlow[];
+}
+
+export async function getNodeFlows(node: string, bridge: string): Promise<OvsFlowDump> {
+  return request<OvsFlowDump>(
+    `${API}/nodes/${encodeURIComponent(node)}/ovs/flows?bridge=${encodeURIComponent(bridge)}`,
+  );
 }

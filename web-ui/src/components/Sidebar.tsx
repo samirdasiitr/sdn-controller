@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  Activity, BarChart3, Cable, HardDrive, ExternalLink, GitBranch, Globe, Layers, LayoutDashboard, Map, Network, Server, Shield,
+  Activity, BarChart3, Cable, HardDrive, ExternalLink, GitBranch, Globe, Layers, LayoutDashboard, Map, Network, Server, Shield, Tags,
 } from 'lucide-react';
 import { GRAFANA_URL, nodePath } from '../resources';
 import { getTopology, listNodes } from '../api';
@@ -19,6 +19,7 @@ const navItems = [
   { to: '/nodes', label: 'Nodes', icon: HardDrive },
   { to: '/topology', label: 'Topology', icon: Map },
   { to: '/metrics', label: 'Metrics', icon: Activity },
+  { to: '/tags', label: 'Tags', icon: Tags },
 ];
 
 function NodeSubList() {

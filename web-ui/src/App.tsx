@@ -14,6 +14,7 @@ import Metrics from './pages/Metrics';
 import VNICs from './pages/VNICs';
 import Nodes from './pages/Nodes';
 import NodeDetail from './pages/NodeDetail';
+import Tags from './pages/Tags';
 import EntityDetail from './pages/EntityDetail';
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
                   <Route path="/infra" element={<Infra />} />
                   <Route path="/topology" element={<Topology />} />
                   <Route path="/metrics" element={<Metrics />} />
+                  <Route path="/tags" element={<Tags />} />
                   <Route path="/:type/:ns/:name" element={<EntityDetail />} />
                 </Routes>
               </main>

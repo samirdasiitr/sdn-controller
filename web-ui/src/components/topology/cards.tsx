@@ -19,6 +19,8 @@ export interface CardData {
   external?: boolean;
   hosts?: string[];
   notPlaced?: boolean;
+  tags?: { key: string; value: string }[];
+  dimmed?: boolean;
 }
 
 export function ResourceCard({ data, selected }: NodeProps<CardData>) {
@@ -30,7 +32,7 @@ export function ResourceCard({ data, selected }: NodeProps<CardData>) {
   return (
     <div
       style={{ width: CARD_W, height: CARD_H, borderLeftColor: st.color }}
-      className={`cursor-pointer overflow-hidden rounded-lg border border-l-4 bg-white px-3 py-2 shadow-sm transition-shadow hover:shadow-md dark:bg-gray-800 ${selected ? 'border-blue-500 ring-2 ring-blue-400/50' : 'border-gray-200 dark:border-gray-600'} ${data.external ? 'border-dashed' : ''}`}
+      className={`cursor-pointer overflow-hidden rounded-lg border border-l-4 bg-white px-3 py-2 shadow-sm transition-shadow hover:shadow-md dark:bg-gray-800 ${selected ? 'border-blue-500 ring-2 ring-blue-400/50' : 'border-gray-200 dark:border-gray-600'} ${data.external ? 'border-dashed' : ''} ${data.dimmed ? 'opacity-30 saturate-50' : ''}`}
     >
       <Handle type="target" position={tp} className="!h-2 !w-2 !border-0 !bg-gray-400" />
       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: st.color }}>
@@ -43,6 +45,17 @@ export function ResourceCard({ data, selected }: NodeProps<CardData>) {
         />
       </div>
       <div className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100" title={data.name}>{data.name}</div>
+      {data.tags && data.tags.length > 0 && (
+        <div className="mt-0.5 flex flex-wrap gap-0.5">
+          {data.tags.slice(0, 3).map((t) => (
+            <span key={t.key} title={`${t.key}=${t.value}`}
+              className="max-w-[95px] truncate rounded-full bg-purple-100 px-1.5 text-[9px] font-medium leading-4 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300">
+              {t.key}={t.value === '' ? '∅' : t.value}
+            </span>
+          ))}
+          {data.tags.length > 3 && <span className="text-[9px] text-gray-400">+{data.tags.length - 3}</span>}
+        </div>
+      )}
       {data.facts.slice(0, 2).map((f, i) => (
         <div key={i} className="truncate text-[11px] leading-tight text-gray-500 dark:text-gray-400" title={f}>{f}</div>
       ))}

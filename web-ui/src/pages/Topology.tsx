@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowDown, ArrowRight } from 'lucide-react';
 import { getTopology, listNodes, queryMetric } from '../api';
 import { useData } from '../context';
+import { parseTagParam, tagStr, type Tag } from '../tags';
+import { TagFilterBar } from '../components/tags';
 import { Card, ErrorBanner, PageHeader } from '../components/ui';
 import LogicalView from '../components/topology/LogicalView';
 import PhysicalView, { TunnelTable, type Bridge, type NodeStats } from '../components/topology/PhysicalView';
@@ -40,6 +42,16 @@ export default function Topology() {
   const view = params.get('view') === 'physical' ? 'physical' : 'logical';
   const selected = params.get('node');
   const [dir, setDir] = useState<'TB' | 'LR'>('TB');
+  const tagFilter: Tag[] = useMemo(
+    () => params.getAll('tag').map(parseTagParam).filter((t): t is Tag => !!t),
+    [params],
+  );
+  const setTagFilter = (tags: Tag[]) => {
+    const next = new URLSearchParams(params);
+    next.delete('tag');
+    for (const t of tags) next.append('tag', tagStr(t));
+    setParams(next, { replace: true });
+  };
 
   const topo = useData(getTopology);
   const nodes = useData(() => listNodes().catch(() => []));
@@ -103,16 +115,23 @@ export default function Topology() {
         }
       />
       <ErrorBanner message={topo.error} />
-      <div className="mb-0 flex border-b border-gray-200 dark:border-gray-700">
-        {tab('logical', 'Logical')}
-        {tab('physical', 'Physical')}
+      <div className="mb-0 flex items-center justify-between border-b border-gray-200 dark:border-gray-700">
+        <div className="flex">
+          {tab('logical', 'Logical')}
+          {tab('physical', 'Physical')}
+        </div>
+        {view === 'logical' && (
+          <div className="px-3 pb-1">
+            <TagFilterBar selected={tagFilter} onChange={setTagFilter} />
+          </div>
+        )}
       </div>
       <div className="flex min-h-[560px] flex-1 flex-col overflow-hidden rounded-b-xl border border-t-0 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
         <div className="relative flex-1">
           {!topo.data ? (
             <div className="flex h-full items-center justify-center text-gray-400">Loading topology…</div>
           ) : view === 'logical' ? (
-            <LogicalView topo={topo.data} dir={dir} />
+            <LogicalView topo={topo.data} dir={dir} tagFilter={tagFilter} />
           ) : (
             <PhysicalView topo={topo.data} k8s={nodes.data ?? []} bridges={bridges.data ?? []} stats={nodeStats.data} selected={selected} />
           )}

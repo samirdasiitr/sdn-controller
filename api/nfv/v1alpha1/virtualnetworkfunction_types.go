@@ -48,6 +48,11 @@ type VNFInterface struct {
 	// +kubebuilder:default=OVSPort
 	// +optional
 	Type VNFInterfaceType `json:"type,omitempty"`
+
+	// subnetRef attaches this interface to a Subnet. For every instance a VNic is
+	// created in that subnet (IPAM address + MAC) and bound to the VNF's port.
+	// +optional
+	SubnetRef string `json:"subnetRef,omitempty"`
 }
 
 // VNFResources defines the compute resources for a VNF.
@@ -78,6 +83,15 @@ type VMConfig struct {
 	// +kubebuilder:default=512
 	// +optional
 	MemoryMB int32 `json:"memoryMB,omitempty"`
+
+	// packages are installed in the guest on first boot (cloud-init), e.g. suricata.
+	// The guest needs internet access (Internet Gateway) for this.
+	// +optional
+	Packages []string `json:"packages,omitempty"`
+
+	// commands run in the guest on first boot after packages are installed.
+	// +optional
+	Commands []string `json:"commands,omitempty"`
 }
 
 // VirtualNetworkFunctionSpec defines the desired state of VirtualNetworkFunction.
@@ -126,6 +140,19 @@ const (
 	VNFPhaseTerminating VNFPhase = "Terminating"
 )
 
+// VNFInstanceStatus is the state of one VNF instance (one guest VM).
+type VNFInstanceStatus struct {
+	// name of the instance (<vnf>-<index>); also the guest VM name suffix.
+	Name string `json:"name"`
+	// node is the host running this instance.
+	Node string `json:"node"`
+	// ready is true once the guest is up and all its VNics are bound to OVS ports.
+	Ready bool `json:"ready"`
+	// message explains why the instance is not ready.
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
 // VirtualNetworkFunctionStatus defines the observed state of VirtualNetworkFunction.
 type VirtualNetworkFunctionStatus struct {
 	// nodes lists the hosts this resource is running on (Ready nodes matching
@@ -135,6 +162,12 @@ type VirtualNetworkFunctionStatus struct {
 
 	// phase is the current lifecycle phase.
 	Phase VNFPhase `json:"phase,omitempty"`
+
+	// instances lists every instance, its host and readiness.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	Instances []VNFInstanceStatus `json:"instances,omitempty"`
 
 	// readyReplicas is the number of running VNF instances.
 	// +optional

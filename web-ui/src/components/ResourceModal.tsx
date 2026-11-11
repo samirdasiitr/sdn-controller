@@ -13,6 +13,8 @@ import {
 import { FORMS, type FieldDef } from '../forms';
 import { RESOURCES } from '../resources';
 import { getIn, setIn } from '../lib';
+import { withTags } from '../tags';
+import { TagEditor } from './tags';
 import { btnPrimary, btnSecondary, inputCls } from './ui';
 
 interface Props {
@@ -381,6 +383,9 @@ export default function ResourceModal({ resource, target, open, onClose, onSaved
                     </Labeled>
                   );
                 })}
+                <Labeled label="Tags" help="key=value tags, stored as tags.sdncontroller.io/* labels">
+                  <TagEditor obj={obj} onChange={(tags) => setObj(withTags(obj, tags))} />
+                </Labeled>
                 <p className="text-xs text-gray-400">
                   Fields not shown here (e.g. health checks) are preserved; use the YAML tab to edit them.
                 </p>

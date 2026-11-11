@@ -9,6 +9,7 @@ import type { TopologyData } from '../../api';
 import { useTheme } from '../../context';
 import { detailPath } from '../../resources';
 import { PLACED } from '../../placement';
+import { TAG_PREFIX, type Tag } from '../../tags';
 import { CARD_H, CARD_W, GroupBox, ResourceCard } from './cards';
 import { EDGE_COLORS, KIND_STYLE, facts } from './kinds';
 
@@ -18,7 +19,13 @@ const HOST_EDGES = new Set(['active_on', 'standby_on', 'attached_node', 'runs_on
 const PAD = 28;
 const HEADER = 40;
 
-export function layoutLogical(topo: TopologyData, dir: 'TB' | 'LR') {
+const nodeTags = (n: { labels?: Record<string, string> }): Tag[] =>
+  Object.entries(n.labels ?? {})
+    .filter(([k]) => k.startsWith(TAG_PREFIX))
+    .map(([k, v]) => ({ key: k.slice(TAG_PREFIX.length), value: v }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+
+export function layoutLogical(topo: TopologyData, dir: 'TB' | 'LR', tagFilter: Tag[] = []) {
   const nodes = topo.nodes.filter((n) => !EXCLUDED.has(n.resource));
   const ids = new Set(nodes.map((n) => n.id));
   const edges = topo.edges.filter((e) => ids.has(e.source) && ids.has(e.target) && !HOST_EDGES.has(e.type));
@@ -99,6 +106,10 @@ export function layoutLogical(topo: TopologyData, dir: 'TB' | 'LR') {
           resource: m.resource, kind: m.kind, name: m.name, phase: m.status?.phase,
           terminating: !!m.deletionTimestamp, facts: facts(m), dir,
           hosts: hostsOf.get(m.id), notPlaced: PLACED.includes(m.resource) && !hostsOf.has(m.id),
+          tags: nodeTags(m),
+          dimmed: tagFilter.length > 0 && !tagFilter.every(
+            (t) => (m.labels ?? {})[TAG_PREFIX + t.key] === t.value,
+          ),
         },
       });
     });
@@ -124,11 +135,11 @@ export function layoutLogical(topo: TopologyData, dir: 'TB' | 'LR') {
   return { nodes: outNodes, edges: outEdges };
 }
 
-function Inner({ topo, dir }: { topo: TopologyData; dir: 'TB' | 'LR' }) {
+function Inner({ topo, dir, tagFilter }: { topo: TopologyData; dir: 'TB' | 'LR'; tagFilter: Tag[] }) {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { fitView } = useReactFlow();
-  const { nodes, edges } = useMemo(() => layoutLogical(topo, dir), [topo, dir]);
+  const { nodes, edges } = useMemo(() => layoutLogical(topo, dir, tagFilter), [topo, dir, tagFilter]);
   useEffect(() => {
     const t = setTimeout(() => fitView({ padding: 0.1, duration: 300 }), 50);
     return () => clearTimeout(t);
@@ -155,7 +166,7 @@ function Inner({ topo, dir }: { topo: TopologyData; dir: 'TB' | 'LR' }) {
   );
 }
 
-export default function LogicalView(props: { topo: TopologyData; dir: 'TB' | 'LR' }) {
+export default function LogicalView(props: { topo: TopologyData; dir: 'TB' | 'LR'; tagFilter: Tag[] }) {
   return (
     <ReactFlowProvider>
       <Inner {...props} />

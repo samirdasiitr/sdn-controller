@@ -70,6 +70,11 @@ spec:
                     name:
                       description: name is the interface name inside the VNF.
                       type: string
+                    subnetRef:
+                      description: |-
+                        subnetRef attaches this interface to a Subnet. For every instance a VNic is
+                        created in that subnet (IPAM address + MAC) and bound to the VNF's port.
+                      type: string
                     type:
                       default: OVSPort
                       description: type is the interface attachment mode.
@@ -155,6 +160,12 @@ spec:
               vmConfig:
                 description: vmConfig is the VM configuration (for VM type).
                 properties:
+                  commands:
+                    description: commands run in the guest on first boot after packages
+                      are installed.
+                    items:
+                      type: string
+                    type: array
                   image:
                     description: image is the disk image path or URL.
                     type: string
@@ -164,6 +175,13 @@ spec:
                     format: int32
                     minimum: 128
                     type: integer
+                  packages:
+                    description: |-
+                      packages are installed in the guest on first boot (cloud-init), e.g. suricata.
+                      The guest needs internet access (Internet Gateway) for this.
+                    items:
+                      type: string
+                    type: array
                   vcpus:
                     default: 1
                     description: vcpus is the number of virtual CPUs.
@@ -237,6 +255,35 @@ spec:
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
+                x-kubernetes-list-type: map
+              instances:
+                description: instances lists every instance, its host and readiness.
+                items:
+                  description: VNFInstanceStatus is the state of one VNF instance
+                    (one guest VM).
+                  properties:
+                    message:
+                      description: message explains why the instance is not ready.
+                      type: string
+                    name:
+                      description: name of the instance (<vnf>-<index>); also the
+                        guest VM name suffix.
+                      type: string
+                    node:
+                      description: node is the host running this instance.
+                      type: string
+                    ready:
+                      description: ready is true once the guest is up and all its
+                        VNics are bound to OVS ports.
+                      type: boolean
+                  required:
+                  - name
+                  - node
+                  - ready
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
                 x-kubernetes-list-type: map
               nodes:
                 description: |-

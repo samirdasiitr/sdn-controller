@@ -17,6 +17,10 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
+	"regexp"
+
+	"github.com/sdncontroller/sdncontroller/internal/agent/ovsinfo"
 	"net/http"
 
 	"context"
@@ -132,6 +136,19 @@ func serveMetrics(ctx context.Context, logger *slog.Logger, addr, nodeName strin
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(ctrlmetrics.Registry, promhttp.HandlerOpts{}))
+	mux.HandleFunc("/ovs/topology", func(w http.ResponseWriter, r *http.Request) {
+		t, err := ovsinfo.GetTopology(r.Context(), nodeName)
+		writeJSON(w, t, err)
+	})
+	mux.HandleFunc("/ovs/flows", func(w http.ResponseWriter, r *http.Request) {
+		br := r.URL.Query().Get("bridge")
+		if !bridgeNameRe.MatchString(br) {
+			http.Error(w, `{"error":"invalid bridge name"}`, http.StatusBadRequest)
+			return
+		}
+		f, err := ovsinfo.GetFlows(r.Context(), br)
+		writeJSON(w, map[string]interface{}{"bridge": br, "node": nodeName, "flows": f}, err)
+	})
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -141,4 +158,16 @@ func serveMetrics(ctx context.Context, logger *slog.Logger, addr, nodeName strin
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error("metrics server failed", "error", err)
 	}
+}
+
+var bridgeNameRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$`)
+
+func writeJSON(w http.ResponseWriter, v interface{}, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(v)
 }

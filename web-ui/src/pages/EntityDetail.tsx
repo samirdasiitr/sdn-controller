@@ -1,12 +1,15 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as yaml from 'js-yaml';
-import { Pencil, Trash2 } from 'lucide-react';
-import { ApiError, deleteResource, friendlyError, getResource, listNodes, listResources } from '../api';
+import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import { ApiError, deleteResource, friendlyError, getNodeOvs, getResource, listNodes, listResources } from '../api';
 import { isPlaceable, placementOf, placedCondition } from '../placement';
 import { useData, useRefresh } from '../context';
 import { RESOURCES } from '../resources';
 import { age } from '../lib';
+import { tagsOf, updateTags, type Tag } from '../tags';
+import { TagEditor } from '../components/tags';
+import FlowTable, { Explainer, portNamesFor } from '../components/FlowTable';
 import { ResourceStatus } from '../components/StatusBadge';
 import ResourceModal from '../components/ResourceModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -60,6 +63,57 @@ function Labels({ labels }: { labels?: Record<string, string> }) {
 }
 
 /* ---------------- Generic panels ---------------- */
+
+function TagsPanel({ resource, item, onSaved }: { resource: string; item: any; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<Tag[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const tags = tagsOf(item);
+  const md = item.metadata;
+  const start = () => { setDraft(tags); setErr(null); setEditing(true); };
+  const save = async () => {
+    setSaving(true);
+    setErr(null);
+    try {
+      await updateTags(resource, md.namespace, md.name, draft);
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      setErr(friendlyError(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Card title={`Tags (${tags.length})`} actions={!editing && <button className={btnSecondary} onClick={start}><Pencil className="h-3.5 w-3.5" /> Edit</button>}>
+      <div className="p-5">
+        {editing ? (
+          <>
+            <TagEditor obj={{ metadata: { labels: Object.fromEntries(draft.map((t) => [`tags.sdncontroller.io/${t.key}`, t.value])) } }} onChange={setDraft} />
+            {err && <p className="mt-2 text-xs text-red-500">{err}</p>}
+            <div className="mt-3 flex gap-2">
+              <button className={btnSecondary} onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+              <button className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50" onClick={save} disabled={saving}>
+                {saving ? 'Saving…' : 'Save tags'}
+              </button>
+            </div>
+          </>
+        ) : tags.length === 0 ? (
+          <span className="text-sm text-gray-400">No tags — add some to group &amp; filter resources.</span>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {tags.map((t) => (
+              <span key={t.key} className="rounded-full border border-purple-300 bg-purple-100 px-2.5 py-1 text-xs font-medium text-purple-700 dark:border-purple-500/30 dark:bg-purple-500/15 dark:text-purple-300">
+                <span className="font-semibold">{t.key}</span>=<span>{t.value === '' ? '∅' : t.value}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 function References({ item }: { item: any }) {
   const ns = item.metadata.namespace;
@@ -300,6 +354,33 @@ function SubnetPanel({ item }: { item: any }) {
   );
 }
 
+function NodeFlowsSection({ node, bridge }: { node: string; bridge?: string }) {
+  const [open, setOpen] = useState(false);
+  const { data: ovsTopo, error } = useData(() => (open ? getNodeOvs(node) : Promise.resolve(null)), [node, open]);
+  const br = bridge ?? ovsTopo?.bridges?.[0]?.name;
+  return (
+    <div className="border-b border-gray-100 last:border-0 dark:border-gray-800">
+      <button className="flex w-full items-center gap-2 px-5 py-3 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50" onClick={() => setOpen((o) => !o)}>
+        {open ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+        <NodeLink name={node} />
+        <span className="text-gray-400">· bridge</span>
+        <span className="font-mono text-xs">{bridge ?? '?'}</span>
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 dark:border-gray-800">
+          {error ? (
+            <div className="px-5 py-4 text-sm text-red-500">Node agent on {node} unreachable: {error}</div>
+          ) : !br ? (
+            <div className="px-5 py-4 text-sm text-gray-400">No bridge reported{ovsTopo === null ? ' (agent unreachable)' : ''}.</div>
+          ) : (
+            <FlowTable node={node} bridge={br} portNames={ovsTopo ? portNamesFor(ovsTopo.bridges, br) : undefined} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VPCPanel({ item }: { item: any }) {
   const ns = item.metadata.namespace;
   const sp = item.spec ?? {};
@@ -341,6 +422,16 @@ function VPCPanel({ item }: { item: any }) {
           { header: 'Bridge', render: (n) => n.bridge },
         ]} />
       </Card>
+      {(st.attachedNodes?.length ?? 0) > 0 && (
+        <Card title={`OpenFlow rules per attached node (${st.attachedNodes.length})`}>
+          <Explainer />
+          <div>
+            {st.attachedNodes.map((n: any) => (
+              <NodeFlowsSection key={n.nodeName} node={n.nodeName} bridge={n.bridge} />
+            ))}
+          </div>
+        </Card>
+      )}
       <Card title={`Route table (${st.routes?.length ?? 0})`}>
         <MiniTable rows={st.routes ?? []} empty="No routes" cols={[
           { header: 'Destination', render: (r) => r.destination },
@@ -603,6 +694,8 @@ export default function EntityDetail() {
           ['Deletion timestamp', md.deletionTimestamp],
         ]} />
       </Card>
+
+      <TagsPanel resource={type} item={item} onSaved={refresh} />
 
       <References item={item} />
 

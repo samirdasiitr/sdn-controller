@@ -1,13 +1,15 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { deleteResource, friendlyError, listResources } from '../api';
 import { useData, useRefresh } from '../context';
 import { RESOURCES, detailPath } from '../resources';
 import { age } from '../lib';
+import { hasTag, parseTagParam, tagStr, type Tag } from '../tags';
 import ResourceTable, { type Column } from './ResourceTable';
 import ResourceModal from './ResourceModal';
 import ConfirmDialog from './ConfirmDialog';
 import { ResourceStatus } from './StatusBadge';
+import { TagChips, TagFilterBar } from './tags';
 import { EntityLink, EntityLinks, ErrorBanner, NodeLink, RunsOn } from './ui';
 
 const nameCol: Column = {
@@ -169,7 +171,39 @@ export default function ResourceList({ resource, title }: { resource: string; ti
   const [delError, setDelError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const rows = (data ?? []).map((d) => ({ ...d, __resource: resource }));
+  const [params, setParams] = useSearchParams();
+  const tagFilters: Tag[] = useMemo(
+    () => params.getAll('tag').map(parseTagParam).filter((t): t is Tag => !!t),
+    [params],
+  );
+  const setTagFilters = (tags: Tag[]) => {
+    const next = new URLSearchParams(params);
+    next.delete('tag');
+    for (const t of tags) next.append('tag', tagStr(t));
+    setParams(next, { replace: true });
+  };
+  const addTagFilter = (t: Tag) => {
+    if (!tagFilters.some((x) => x.key === t.key && x.value === t.value)) setTagFilters([...tagFilters, t]);
+  };
+
+  const tagsCol: Column = useMemo(() => ({
+    key: 'tags',
+    header: 'Tags',
+    render: (i) => <TagChips item={i} onClickTag={addTagFilter} />,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [tagFilters]);
+
+  const columns = useMemo(() => {
+    const cols = [...COLUMNS[resource]];
+    // insert Tags before the Status column (last or near-last)
+    const idx = cols.findIndex((c) => c.header === 'Status');
+    cols.splice(idx >= 0 ? idx : cols.length, 0, tagsCol);
+    return cols;
+  }, [resource, tagsCol]);
+
+  const rows = (data ?? [])
+    .map((d) => ({ ...d, __resource: resource }))
+    .filter((d) => tagFilters.every((t) => hasTag(d, t)));
 
   const doDelete = async () => {
     setBusy(true);
@@ -188,9 +222,12 @@ export default function ResourceList({ resource, title }: { resource: string; ti
   return (
     <>
       <ErrorBanner message={error} />
+      <div className="mb-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5 dark:border-gray-700 dark:bg-gray-900">
+        <TagFilterBar selected={tagFilters} onChange={setTagFilters} />
+      </div>
       <ResourceTable
         title={title ?? `${meta.label}s`}
-        columns={COLUMNS[resource]}
+        columns={columns}
         data={rows}
         loading={loading}
         onCreate={() => setModal({ open: true, target: null })}

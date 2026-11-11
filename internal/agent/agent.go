@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,6 +41,7 @@ import (
 	agentoffload "github.com/sdncontroller/sdncontroller/internal/agent/offload"
 	agentovs "github.com/sdncontroller/sdncontroller/internal/agent/ovs"
 	agenttunnel "github.com/sdncontroller/sdncontroller/internal/agent/tunnel"
+	agentvnfvm "github.com/sdncontroller/sdncontroller/internal/agent/vnfvm"
 	agentvpc "github.com/sdncontroller/sdncontroller/internal/agent/vpcattach"
 	pkgovs "github.com/sdncontroller/sdncontroller/pkg/ovs"
 )
@@ -69,6 +71,7 @@ type Agent struct {
 	LibvirtManager *agentlibvirt.LibvirtManager
 	DPUManager     *agentdpu.DPUManager
 	VPCAttach      *agentvpc.Reconciler
+	VNFVM          *agentvnfvm.Reconciler
 
 	cancel context.CancelFunc
 }
@@ -107,6 +110,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.LibvirtManager = agentlibvirt.NewLibvirtManager(ovsClient, a.log)
 	a.DPUManager = agentdpu.NewDPUManager(a.log)
 	a.VPCAttach = agentvpc.New(a.k8sClient, a.cfg.NodeName, ovsClient, a.log)
+	a.VNFVM = agentvnfvm.New(a.k8sClient, a.cfg.NodeName, os.Getenv("VNF_SSH_AUTHORIZED_KEY"), a.log)
 
 	// Phase 1: Discover hardware.
 	a.log.InfoContext(ctx, "discovering hardware capabilities")
@@ -144,6 +148,11 @@ func (a *Agent) Start(ctx context.Context) error {
 	// Phase 5b: Attach this node to its VPCs (bridges, tunnels, flows, IGW NAT).
 	if err := a.VPCAttach.Reconcile(ctx); err != nil {
 		a.log.ErrorContext(ctx, "failed to attach VPCs", "error", err)
+	}
+
+	// Phase 5c: Boot guests for VM-type VNF instances scheduled on this node.
+	if err := a.VNFVM.Reconcile(ctx); err != nil {
+		a.log.WarnContext(ctx, "VNF guest reconciliation incomplete", "error", err)
 	}
 
 	// Phase 6: Report status.
@@ -340,6 +349,9 @@ func (a *Agent) watchLoop(ctx context.Context) {
 			}
 			if err := a.VPCAttach.Reconcile(ctx); err != nil {
 				a.log.Error("VPC attachment reconciliation failed", "error", err)
+			}
+			if err := a.VNFVM.Reconcile(ctx); err != nil {
+				a.log.Warn("VNF guest reconciliation incomplete", "error", err)
 			}
 		}
 	}

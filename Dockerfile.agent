@@ -35,6 +35,9 @@ RUN apt-get update && apt-get install -y \
     iproute2 \
     ethtool \
     iptables \
+    libvirt-clients \
+    qemu-utils \
+    genisoimage \
     procps \
     pciutils \
     && rm -rf /var/lib/apt/lists/*

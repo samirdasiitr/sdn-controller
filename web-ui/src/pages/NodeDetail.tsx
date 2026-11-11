@@ -1,17 +1,28 @@
+import { useCallback, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Server } from 'lucide-react';
-import { getNode } from '../api';
+import { getNode, getNodeOvs } from '../api';
 import { useData } from '../context';
 import { RESOURCES, detailPath } from '../resources';
 import { age, fmtBytes, fmtNum } from '../lib';
 import { fmtOrDash, fmtPct, useOvs } from '../ovs';
 import { Badge, Breadcrumb, Card, ErrorBanner, MiniTable, PageHeader, Props, linkCls } from '../components/ui';
 import { DaemonBadges, HwOffloadBadge, NicOffloadBadges, TableChips } from '../components/ovsui';
+import FlowTable, { Explainer, portNamesFor } from '../components/FlowTable';
+import NodeConnections from '../components/NodeConnections';
 
 export default function NodeDetail() {
   const { name = '' } = useParams();
   const { data: node, error, loading } = useData(() => getNode(name), [name]);
   const { data: ovs } = useOvs(name);
+  const { data: ovsTopo, error: ovsTopoErr } = useData(() => getNodeOvs(name), [name]);
+  const [bridge, setBridge] = useState<string | null>(null);
+  const flowsRef = useRef<HTMLDivElement>(null);
+  const selBridge = bridge ?? ovsTopo?.bridges?.[0]?.name ?? null;
+  const scrollToFlows = useCallback((br: string) => {
+    setBridge(br);
+    setTimeout(() => flowsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }, []);
   const ovsNode = ovs?.nodes.find((n) => n.node === name);
   const crumbs = [{ label: 'Dashboard', to: '/' }, { label: 'Nodes', to: '/nodes' }, { label: name }];
 
@@ -74,6 +85,37 @@ export default function NodeDetail() {
           </div>
         )}
       </Card>
+      <Card title="Connections">
+        <NodeConnections node={name} onBridgeClick={scrollToFlows} />
+      </Card>
+      <div ref={flowsRef}>
+        <Card
+          title={<span>OpenFlow rules{selBridge ? <> · <span className="font-mono">{selBridge}</span></> : ''}</span>}
+          actions={
+            ovsTopo && ovsTopo.bridges.length > 1 ? (
+              <div className="flex gap-1">
+                {ovsTopo.bridges.map((b) => (
+                  <button key={b.name} onClick={() => setBridge(b.name)}
+                    className={`rounded-lg px-2.5 py-1 font-mono text-xs ${selBridge === b.name ? 'bg-blue-600 text-white' : 'border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700'}`}>
+                    {b.name}
+                  </button>
+                ))}
+              </div>
+            ) : undefined
+          }
+        >
+          <Explainer />
+          {ovsTopoErr ? (
+            <ErrorBanner message={`Cannot load OpenFlow rules: ${ovsTopoErr}`} />
+          ) : !ovsTopo ? (
+            <div className="px-5 py-6 text-center text-sm text-gray-400">Loading bridges…</div>
+          ) : !selBridge ? (
+            <div className="px-5 py-6 text-center text-sm text-gray-400">No OVS bridges on this node.</div>
+          ) : (
+            <FlowTable key={selBridge} node={name} bridge={selBridge} portNames={portNamesFor(ovsTopo.bridges, selBridge)} />
+          )}
+        </Card>
+      </div>
       <Card title="OVS datapath & offload (Prometheus)">
         <Props items={[
           ['OpenFlow rules', ovsNode && fmtNum(ovsNode.rules)],
