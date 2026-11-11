@@ -1,19 +1,21 @@
 import { Link } from 'react-router-dom';
 import {
-  ArrowUpDown, Cable, Cpu, GitBranch, Globe, Layers, Link2, Network, Router, Server, Settings2, Shield,
+  ArrowUpDown, Cable, Plug, Cpu, GitBranch, Globe, Layers, Link2, Network, Router, Server, Settings2, Shield,
   type LucideIcon,
 } from 'lucide-react';
-import { listResources, queryRange } from '../api';
+import { getTopology, listNodes, listResources, queryRange } from '../api';
+import { countByResource, hostedByNode } from '../placement';
 import { useData } from '../context';
 import { RESOURCES, detailPath } from '../resources';
 import { age } from '../lib';
 import { ResourceStatus } from '../components/StatusBadge';
-import { Card, EntityLink, ErrorBanner, PageHeader } from '../components/ui';
+import { Card, EntityLink, ErrorBanner, MiniTable, NodeLink, PageHeader } from '../components/ui';
 import { MetricChart, Sparkline, FORMATS, toPoints } from '../components/charts';
 
 const TYPES: { type: string; label: string; to: string; icon: LucideIcon; color: string }[] = [
   { type: 'vpcs', label: 'VPCs', to: '/vpcs', icon: Network, color: 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-500/20' },
   { type: 'subnets', label: 'Subnets', to: '/subnets', icon: Layers, color: 'text-purple-600 bg-purple-100 dark:text-purple-400 dark:bg-purple-500/20' },
+  { type: 'vnics', label: 'VNICs', to: '/vnics', icon: Plug, color: 'text-fuchsia-600 bg-fuchsia-100 dark:text-fuchsia-400 dark:bg-fuchsia-500/20' },
   { type: 'internetgateways', label: 'Internet GWs', to: '/gateways', icon: Globe, color: 'text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-500/20' },
   { type: 'natgateways', label: 'NAT GWs', to: '/gateways', icon: Router, color: 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-500/20' },
   { type: 'loadbalancers', label: 'Load Balancers', to: '/services', icon: ArrowUpDown, color: 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-500/20' },
@@ -43,6 +45,9 @@ export default function Dashboard() {
     const res = await Promise.allSettled(TYPES.map((t) => listResources(t.type)));
     return TYPES.map((t, i) => ({ ...t, items: res[i].status === 'fulfilled' ? (res[i] as PromiseFulfilledResult<any[]>).value : [] }));
   });
+  const placementNodes = useData(() => listNodes().catch(() => []));
+  const placementTopo = useData(() => getTopology().catch(() => undefined));
+  const hosted = hostedByNode(placementTopo.data);
   const spark = useData(async () => {
     const q = (s: string) => queryRange(s, 1800, 30).then((r) => r.flatMap(toPoints)).catch(() => []);
     const [recon, flows, tx, queue] = await Promise.all([
@@ -144,6 +149,23 @@ export default function Dashboard() {
           </div>
         </Card>
       </div>
+
+      <Card title="Placement (services per node)">
+        <MiniTable
+          rows={placementNodes.data ?? []}
+          empty="No nodes"
+          cols={[
+            { header: 'Node', render: (n) => <NodeLink name={n.name} /> },
+            ...([['LB', ['loadbalancers']], ['FW', ['firewalls']], ['GW', ['internetgateways', 'natgateways']], ['VNF', ['virtualnetworkfunctions']], ['Chains', ['servicechains']], ['VNICs', ['vnics']]] as [string, string[]][]).map(([h, rs]) => ({
+              header: h,
+              render: (n: any) => {
+                const c = countByResource(hosted.get(n.name));
+                return rs.reduce((a, r) => a + (c[r] ?? 0), 0) || <span className="text-gray-400">0</span>;
+              },
+            })),
+          ]}
+        />
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <MetricChart title="Controller reconcile rate by controller (/s)" query="sum by (controller) (rate(controller_runtime_reconcile_total[1m]))" labelKey="controller" rangeSec={1800} />

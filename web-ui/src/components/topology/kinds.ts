@@ -1,5 +1,5 @@
 import {
-  ArrowUpDown, Cable, Cpu, GitBranch, Globe, Layers, Link2, Network, Router, Server, Settings2, Shield, type LucideIcon,
+  ArrowUpDown, Cable, Cpu, GitBranch, Globe, Layers, Link2, Network, Plug, Router, Server, Settings2, Shield, type LucideIcon,
 } from 'lucide-react';
 
 export const KIND_STYLE: Record<string, { color: string; icon: LucideIcon; label: string }> = {
@@ -9,6 +9,7 @@ export const KIND_STYLE: Record<string, { color: string; icon: LucideIcon; label
   natgateways: { color: '#f59e0b', icon: Router, label: 'NAT GW' },
   loadbalancers: { color: '#eab308', icon: ArrowUpDown, label: 'Load Balancer' },
   firewalls: { color: '#ef4444', icon: Shield, label: 'Firewall' },
+  vnics: { color: '#d946ef', icon: Plug, label: 'VNIC' },
   servicechains: { color: '#ec4899', icon: Cpu, label: 'Service Chain' },
   virtualnetworkfunctions: { color: '#22c55e', icon: Server, label: 'VNF' },
   tunnels: { color: '#14b8a6', icon: GitBranch, label: 'Tunnel' },
@@ -25,6 +26,9 @@ export const EDGE_COLORS: Record<string, string> = {
   tunnel_endpoint: '#14b8a6',
   active_on: '#f97316',
   attached_node: '#0ea5e9',
+  runs_on: '#0ea5e9',
+  standby_on: '#0ea5e9',
+  protected_by: '#ef4444',
 };
 
 export function facts(n: { resource: string; spec?: any; status?: any }): string[] {
@@ -47,6 +51,10 @@ export function facts(n: { resource: string; spec?: any; status?: any }): string
       return [`${s.chain?.length ?? 0} hops`, s.direction ?? ''];
     case 'virtualnetworkfunctions':
       return [s.type ?? '', `${st.readyReplicas ?? 0}/${s.replicas ?? 1} ready`];
+    case 'vnics': {
+      const att = s.attachment ? `${s.attachment.kind}/${s.attachment.name}` : '';
+      return [st.ipAddress ?? s.ipAddress ?? '', att].filter(Boolean);
+    }
     case 'nodes':
       return [s.internalIP ?? ''];
     default:

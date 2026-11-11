@@ -11,6 +11,9 @@ import NFV from './pages/NFV';
 import Infra from './pages/Infra';
 import Topology from './pages/Topology';
 import Metrics from './pages/Metrics';
+import VNICs from './pages/VNICs';
+import Nodes from './pages/Nodes';
+import NodeDetail from './pages/NodeDetail';
 import EntityDetail from './pages/EntityDetail';
 
 export default function App() {
@@ -27,6 +30,9 @@ export default function App() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/vpcs" element={<VPCs />} />
                   <Route path="/subnets" element={<Subnets />} />
+                  <Route path="/vnics" element={<VNICs />} />
+                  <Route path="/nodes" element={<Nodes />} />
+                  <Route path="/nodes/:name" element={<NodeDetail />} />
                   <Route path="/gateways" element={<Gateways />} />
                   <Route path="/services" element={<Services />} />
                   <Route path="/nfv" element={<NFV />} />

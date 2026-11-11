@@ -6,6 +6,7 @@ import {
   friendlyError,
   getResource,
   listNamespaces,
+  listNodes,
   listResources,
   updateResource,
 } from '../api';
@@ -23,7 +24,7 @@ interface Props {
   onSaved: () => void;
 }
 
-type Ctx = { vpcs: string[]; subnets: string[]; vnfs: string[]; subnetsByVpc?: Record<string, string[]> };
+type Ctx = { vpcs: string[]; subnets: string[]; vnfs: string[]; nodes: string[]; firewalls: string[]; subnetsByVpc?: Record<string, string[]> };
 
 /* ---------- small controlled inputs with local text state ---------- */
 
@@ -136,8 +137,8 @@ function FieldInput({
     }
     case 'checkbox':
       return (
-        <input type="checkbox" className="h-4 w-4" checked={!!value} disabled={disabled}
-          onChange={(e) => onChange(e.target.checked ? true : undefined)} />
+        <input type="checkbox" className="h-4 w-4" checked={field.boolDefault !== undefined ? (value ?? field.boolDefault) : !!value} disabled={disabled}
+          onChange={(e) => onChange(field.boolDefault !== undefined ? e.target.checked : e.target.checked ? true : undefined)} />
       );
     case 'strings':
       return <StringsInput value={value} onChange={onChange} placeholder={field.placeholder} />;
@@ -199,7 +200,7 @@ export default function ResourceModal({ resource, target, open, onClose, onSaved
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [namespaces, setNamespaces] = useState<string[]>([]);
-  const [lists, setLists] = useState<{ vpcs: any[]; subnets: any[]; vnfs: any[] }>({ vpcs: [], subnets: [], vnfs: [] });
+  const [lists, setLists] = useState<{ vpcs: any[]; subnets: any[]; vnfs: any[]; firewalls: any[]; nodes: string[] }>({ vpcs: [], subnets: [], vnfs: [], firewalls: [], nodes: [] });
   const [resetKey, setResetKey] = useState(0);
 
   useEffect(() => {
@@ -212,7 +213,9 @@ export default function ResourceModal({ resource, target, open, onClose, onSaved
       listResources('vpcs').catch(() => []),
       listResources('subnets').catch(() => []),
       listResources('virtualnetworkfunctions').catch(() => []),
-    ]).then(([vpcs, subnets, vnfs]) => setLists({ vpcs, subnets, vnfs }));
+      listResources('firewalls').catch(() => []),
+      listNodes().then((l) => l.map((n) => n.name)).catch(() => [] as string[]),
+    ]).then(([vpcs, subnets, vnfs, firewalls, nodes]) => setLists({ vpcs, subnets, vnfs, firewalls, nodes }));
     if (target) {
       setObj(null);
       getResource(resource, target.namespace, target.name)
@@ -248,7 +251,7 @@ export default function ResourceModal({ resource, target, open, onClose, onSaved
     for (const s of lists.subnets.filter(inNs)) {
       (subnetsByVpc[s.spec?.vpcRef] ??= []).push(s.metadata.name);
     }
-    return { vpcs: names(lists.vpcs), subnets: names(lists.subnets), vnfs: names(lists.vnfs), subnetsByVpc };
+    return { vpcs: names(lists.vpcs), subnets: names(lists.subnets), vnfs: names(lists.vnfs), firewalls: names(lists.firewalls), nodes: [...lists.nodes].sort(), subnetsByVpc };
   }, [lists, ns]) as Ctx & { subnetsByVpc: Record<string, string[]> };
 
   if (!open) return null;

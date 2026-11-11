@@ -49,6 +49,7 @@ var gvrMap = map[string]schema.GroupVersionResource{
 	"nodenetworkconfigs":      {Group: "infra.sdncontroller.io", Version: "v1alpha1", Resource: "nodenetworkconfigs"},
 	"servicechains":           {Group: "nfv.sdncontroller.io", Version: "v1alpha1", Resource: "servicechains"},
 	"virtualnetworkfunctions": {Group: "nfv.sdncontroller.io", Version: "v1alpha1", Resource: "virtualnetworkfunctions"},
+	"vnics":                   {Group: "vpc.sdncontroller.io", Version: "v1alpha1", Resource: "vnics"},
 }
 
 // Kind to resource mapping for create/update
@@ -59,6 +60,7 @@ var kindToResource = map[string]string{
 	"Tunnel": "tunnels", "Bond": "bonds",
 	"NetworkInterface": "networkinterfaces", "NodeNetworkConfig": "nodenetworkconfigs",
 	"ServiceChain": "servicechains", "VirtualNetworkFunction": "virtualnetworkfunctions",
+	"VNic": "vnics",
 }
 
 func main() {
@@ -93,6 +95,7 @@ func main() {
 	mux.HandleFunc("/api/topology", handleTopology)
 	mux.HandleFunc("/api/namespaces", handleNamespaces)
 	mux.HandleFunc("/api/nodes", handleNodes)
+	mux.HandleFunc("/api/nodes/", handleNodeDetail)
 	mux.HandleFunc("/api/metrics/query", handleMetricsProxy("query"))
 	mux.HandleFunc("/api/metrics/query_range", handleMetricsProxy("query_range"))
 
@@ -380,6 +383,18 @@ func handleTopology(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+			if fw, ok := spec["firewallRef"].(string); ok && fw != "" && resource == "vnics" {
+				addEdge(id, refKey("firewalls", ns, fw), "protected_by", "firewall")
+			}
+			if resource == "vnics" {
+				bn, _, _ := unstructured.NestedString(item.Object, "status", "boundNode")
+				if bn == "" {
+					bn, _ = spec["nodeName"].(string)
+				}
+				if bn != "" {
+					addEdge(id, refKey("nodes", "", bn), "runs_on", "runs on")
+				}
+			}
 			// Node relationships
 			if resource == "tunnels" {
 				for _, k := range []string{"localEndpoint", "remoteEndpoint"} {
@@ -393,6 +408,16 @@ func handleTopology(w http.ResponseWriter, r *http.Request) {
 			if status != nil {
 				if an, ok := status["activeNode"].(string); ok && an != "" {
 					addEdge(id, refKey("nodes", "", an), "active_on", "active")
+				}
+				if sn, ok := status["standbyNode"].(string); ok && sn != "" {
+					addEdge(id, refKey("nodes", "", sn), "standby_on", "standby")
+				}
+				if ns2, ok := status["nodes"].([]interface{}); ok {
+					for _, x := range ns2 {
+						if n, ok := x.(string); ok && n != "" {
+							addEdge(id, refKey("nodes", "", n), "runs_on", "runs on")
+						}
+					}
 				}
 				if att, ok := status["attachedNodes"].([]interface{}); ok {
 					for _, a := range att {
@@ -516,6 +541,90 @@ func handleNodes(w http.ResponseWriter, r *http.Request) {
 		out = append(out, nodeInfo(n))
 	}
 	jsonResponse(w, 200, out)
+}
+
+// GET /api/nodes/{name} - node info plus every SDN resource placed on it.
+func handleNodeDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, 405, "method not allowed")
+		return
+	}
+	name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/nodes/"), "/")
+	if name == "" {
+		handleNodes(w, r)
+		return
+	}
+	ctx := context.Background()
+	n, err := dynamicClient.Resource(nodesGVR).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		k8sError(w, err)
+		return
+	}
+	out := nodeInfo(*n)
+	hosted := hostedOn(ctx, name)
+	out["hosted"] = hosted
+	jsonResponse(w, 200, out)
+}
+
+func hostedOn(ctx context.Context, node string) []map[string]interface{} {
+	hosted := []map[string]interface{}{}
+	resources := make([]string, 0, len(gvrMap))
+	for resource := range gvrMap {
+		resources = append(resources, resource)
+	}
+	sort.Strings(resources)
+	for _, resource := range resources {
+		list, err := dynamicClient.Resource(gvrMap[resource]).Namespace("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			continue
+		}
+		for _, item := range list.Items {
+			spec, _ := item.Object["spec"].(map[string]interface{})
+			status, _ := item.Object["status"].(map[string]interface{})
+			roles := []string{}
+			if v, _ := spec["nodeName"].(string); v == node {
+				roles = append(roles, "assigned")
+			}
+			if v, _ := status["activeNode"].(string); v == node {
+				roles = append(roles, "active")
+			}
+			if v, _ := status["standbyNode"].(string); v == node {
+				roles = append(roles, "standby")
+			}
+			if v, _ := status["boundNode"].(string); v == node {
+				roles = append(roles, "bound")
+			}
+			if l, ok := status["nodes"].([]interface{}); ok {
+				for _, x := range l {
+					if s, _ := x.(string); s == node {
+						roles = append(roles, "placed")
+						break
+					}
+				}
+			}
+			if l, ok := status["attachedNodes"].([]interface{}); ok {
+				for _, x := range l {
+					if m, ok := x.(map[string]interface{}); ok {
+						if s, _ := m["nodeName"].(string); s == node {
+							roles = append(roles, "attached")
+							break
+						}
+					}
+				}
+			}
+			if len(roles) == 0 {
+				continue
+			}
+			if len(roles) > 1 && roles[0] == "assigned" {
+				roles = roles[1:]
+			}
+			hosted = append(hosted, map[string]interface{}{
+				"kind": item.GetKind(), "name": item.GetName(), "namespace": item.GetNamespace(),
+				"resource": resource, "role": strings.Join(roles, ","),
+			})
+		}
+	}
+	return hosted
 }
 
 // handleMetricsProxy is a thin GET-only proxy to Prometheus' /api/v1/<endpoint>.

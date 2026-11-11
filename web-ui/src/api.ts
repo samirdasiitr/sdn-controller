@@ -145,3 +145,19 @@ export function queryRange(query: string, rangeSec = 3600, step = 30): Promise<P
     step: String(step),
   });
 }
+
+export interface HostedRef {
+  kind: string;
+  name: string;
+  namespace: string;
+  resource: string;
+  role: string;
+}
+export interface K8sNodeDetail extends K8sNode {
+  creationTimestamp?: string;
+  hosted: HostedRef[];
+}
+
+export async function getNode(name: string): Promise<K8sNodeDetail> {
+  return request<K8sNodeDetail>(`${API}/nodes/${encodeURIComponent(name)}`);
+}

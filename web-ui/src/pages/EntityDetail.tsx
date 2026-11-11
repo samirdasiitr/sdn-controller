@@ -2,7 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as yaml from 'js-yaml';
 import { Pencil, Trash2 } from 'lucide-react';
-import { ApiError, deleteResource, friendlyError, getResource, listResources } from '../api';
+import { ApiError, deleteResource, friendlyError, getResource, listNodes, listResources } from '../api';
+import { isPlaceable, placementOf, placedCondition } from '../placement';
 import { useData, useRefresh } from '../context';
 import { RESOURCES } from '../resources';
 import { age } from '../lib';
@@ -11,13 +12,14 @@ import ResourceModal from '../components/ResourceModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { MetricChart } from '../components/charts';
 import {
-  Breadcrumb, Card, EntityLink, EntityLinks, ErrorBanner, KindRefLink, MiniTable, NodeLink,
+  Badge, Breadcrumb, Card, EntityLink, EntityLinks, ErrorBanner, KindRefLink, MiniTable, NodeLink,
   PageHeader, ProgressBar, Props, btnSecondary, linkCls,
 } from '../components/ui';
 
 const LIST_PAGE: Record<string, [string, string]> = {
   vpcs: ['VPCs', '/vpcs'],
   subnets: ['Subnets', '/subnets'],
+  vnics: ['VNICs', '/vnics'],
   internetgateways: ['Gateways', '/gateways'],
   natgateways: ['Gateways', '/gateways'],
   loadbalancers: ['Services', '/services'],
@@ -68,7 +70,10 @@ function References({ item }: { item: any }) {
   if (s.subnetRefs?.length) rows.push(['Subnets', <EntityLinks resource="subnets" ns={ns} names={s.subnetRefs} />]);
   if (s.chain?.length)
     rows.push(['VNFs', <EntityLinks resource="virtualnetworkfunctions" ns={ns} names={s.chain.map((c: any) => c.vnfRef)} />]);
-  if (s.nodeName) rows.push(['Node', <NodeLink name={s.nodeName} />]);
+  if (item.kind === 'VNic' && item.status?.vpcRef) rows.push(['VPC', <EntityLink resource="vpcs" ns={ns} name={item.status.vpcRef} />]);
+  if (s.firewallRef) rows.push(['Firewall', <EntityLink resource="firewalls" ns={ns} name={s.firewallRef} />]);
+  if (item.kind === 'VNic' && item.status?.boundNode) rows.push(['Bound node', <NodeLink name={item.status.boundNode} />]);
+  else if (s.nodeName) rows.push(['Node', <NodeLink name={s.nodeName} />]);
   if (item.status?.activeNode) rows.push(['Active node', <NodeLink name={item.status.activeNode} />]);
   if (item.status?.standbyNode) rows.push(['Standby node', <NodeLink name={item.status.standbyNode} />]);
   if (!rows.length) return null;
@@ -96,6 +101,79 @@ function Conditions({ conditions }: { conditions?: any[] }) {
         ]}
       />
     </Card>
+  );
+}
+
+function PlacementPanel({ resource, item }: { resource: string; item: any }) {
+  const { data: nodes } = useData(() => listNodes().catch(() => []), []);
+  const p = placementOf(resource, item);
+  const cond = placedCondition(item);
+  return (
+    <Card title="Placement">
+      <MiniTable
+        rows={p}
+        empty="Not placed on any node"
+        cols={[
+          { header: 'Node', render: (x) => <NodeLink name={x.node} /> },
+          { header: 'Role', render: (x) => (x.role === 'active' ? <Badge tone="green">active</Badge> : x.role === 'standby' ? <Badge tone="blue">standby</Badge> : <Badge tone="gray">{x.role}</Badge>) },
+          { header: 'Internal IP', render: (x) => (nodes ?? []).find((n) => n.name === x.node)?.internalIP ?? '-' },
+          { header: 'Ready', render: (x) => {
+            const n = (nodes ?? []).find((k) => k.name === x.node);
+            return n ? <Badge tone={n.ready ? 'green' : 'yellow'}>{n.ready ? 'Ready' : 'NotReady'}</Badge> : <span className="text-gray-400">unknown</span>;
+          } },
+        ]}
+      />
+      {(p.length === 0 || (cond && cond.status !== 'True')) && (
+        <div className="border-t border-gray-100 px-5 py-3 text-sm dark:border-gray-800">
+          {p.length === 0 && <Badge tone="yellow">Not placed</Badge>}{' '}
+          {cond ? <span className="text-gray-600 dark:text-gray-300">{cond.reason ? `${cond.reason}: ` : ''}{cond.message}</span> : null}
+        </div>
+      )}
+      {p.length > 0 && cond?.status === 'True' && cond.message && (
+        <div className="border-t border-gray-100 px-5 py-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-300">{cond.message}</div>
+      )}
+    </Card>
+  );
+}
+
+function VNicPanel({ item }: { item: any }) {
+  const sp = item.spec ?? {};
+  const st = item.status ?? {};
+  return (
+    <>
+      <Card title="Network identity">
+        <Props items={[
+          ['IP address', st.ipAddress ? `${st.ipAddress}${st.prefixLength ? '/' + st.prefixLength : ''}` : sp.ipAddress && `${sp.ipAddress} (requested)`],
+          ['MAC address', <span className="font-mono">{st.macAddress ?? sp.macAddress}</span>],
+          ['Gateway', st.gateway],
+          ['MTU', st.mtu ?? sp.mtu],
+          ['Port security', sp.portSecurity === false ? 'disabled' : 'enabled'],
+          ['Workload', sp.attachment && `${sp.attachment.kind}/${sp.attachment.name}`],
+        ]} />
+      </Card>
+      <Card title="Binding">
+        <Props items={[
+          ['Node', <NodeLink name={st.boundNode || sp.nodeName} />],
+          ['Bridge', st.bridge],
+          ['OVS port', st.ovsPort],
+          ['OpenFlow port', st.ofPort],
+          ['Phase', st.phase],
+        ]} />
+      </Card>
+    </>
+  );
+}
+
+function VNicTable({ vnics, ns }: { vnics: any[]; ns: string }) {
+  return (
+    <MiniTable rows={vnics} empty="No VNICs in this subnet" cols={[
+      { header: 'Name', render: (v) => <EntityLink resource="vnics" ns={ns} name={v.metadata.name} /> },
+      { header: 'IP', render: (v) => v.status?.ipAddress ?? v.spec?.ipAddress ?? '-' },
+      { header: 'MAC', render: (v) => <span className="font-mono text-xs">{v.status?.macAddress ?? v.spec?.macAddress ?? '-'}</span> },
+      { header: 'Workload', render: (v) => (v.spec?.attachment ? `${v.spec.attachment.kind}/${v.spec.attachment.name}` : '-') },
+      { header: 'Node', render: (v) => <NodeLink name={v.status?.boundNode || v.spec?.nodeName} /> },
+      { header: 'Phase', render: (v) => <ResourceStatus item={v} showBlockers={false} /> },
+    ]} />
   );
 }
 
@@ -186,10 +264,18 @@ function LBPanel({ item }: { item: any }) {
 function SubnetPanel({ item }: { item: any }) {
   const ns = item.metadata.namespace;
   const sp = item.spec ?? {};
-  const alloc = item.status?.allocatedIPs ?? 0;
-  const avail = item.status?.availableIPs;
-  const total = avail === undefined ? 0 : alloc + avail;
+  const { data: allVnics } = useData(() => listResources('vnics', ns).catch(() => []), [ns]);
+  const vnics = (allVnics ?? []).filter((v) => v.spec?.subnetRef === item.metadata.name);
+  const withIP = vnics.filter((v) => v.status?.ipAddress).length;
+  const reported = item.status?.allocatedIPs ?? 0;
+  const avail0 = item.status?.availableIPs;
+  const total = avail0 === undefined ? 0 : reported + avail0;
+  // keep the usage bar consistent with VNICs that already hold an IP the status hasn't counted yet
+  const extra = Math.max(0, withIP - reported);
+  const alloc = reported + extra;
+  const avail = avail0 === undefined ? undefined : Math.max(0, avail0 - extra);
   return (
+    <>
     <Card title="Subnet">
       <Props items={[
         ['VPC', <EntityLink resource="vpcs" ns={ns} name={sp.vpcRef} />],
@@ -204,9 +290,13 @@ function SubnetPanel({ item }: { item: any }) {
         ['Total IPs', total || undefined],
       ]} />
       <div className="px-5 pb-5">
-        <ProgressBar value={alloc} max={total} label="IP usage" />
+        <ProgressBar value={alloc} max={total} label={`IP usage (${withIP} VNIC${withIP === 1 ? '' : 's'} with an IP)`} />
       </div>
     </Card>
+    <Card title={`VNICs in this subnet (${vnics.length})`}>
+      <VNicTable vnics={vnics} ns={ns} />
+    </Card>
+    </>
   );
 }
 
@@ -216,6 +306,9 @@ function VPCPanel({ item }: { item: any }) {
   const st = item.status ?? {};
   const { data: subnets } = useData(() => listResources('subnets', ns), [ns]);
   const mine = (subnets ?? []).filter((s) => s.spec?.vpcRef === item.metadata.name);
+  const { data: vnics } = useData(() => listResources('vnics', ns).catch(() => []), [ns]);
+  const mineSubnets = new Set(mine.map((s) => s.metadata.name));
+  const vnicCount = (vnics ?? []).filter((v) => v.status?.vpcRef === item.metadata.name || mineSubnets.has(v.spec?.subnetRef)).length;
   return (
     <>
       <Card title="VPC">
@@ -228,6 +321,7 @@ function VPCPanel({ item }: { item: any }) {
           ['DNS', sp.enableDNS ? 'enabled' : 'disabled'],
           ['Active nodes', st.activeNodes],
           ['Allocated subnets', st.allocatedSubnets],
+          ['VNICs', vnicCount],
           ['Node selector', <Labels labels={sp.nodeSelector?.matchLabels} />],
         ]} />
       </Card>
@@ -520,6 +614,8 @@ export default function EntityDetail() {
       {type === 'servicechains' && <ChainPanel item={item} />}
       {type === 'virtualnetworkfunctions' && <VNFPanel item={item} />}
       {type === 'tunnels' && <TunnelPanel item={item} />}
+      {type === 'vnics' && <VNicPanel item={item} />}
+      {isPlaceable(type) && <PlacementPanel resource={type} item={item} />}
 
       {metricsFor(type, item)}
 

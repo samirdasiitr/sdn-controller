@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronRight, RefreshCw } from 'lucide-react';
 import { KIND_TO_RESOURCE, RESOURCES, detailPath, nodePath } from '../resources';
 import { useRefresh } from '../context';
+import { placementOf } from '../placement';
 
 export const btnPrimary =
   'inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50';
@@ -243,5 +244,36 @@ export function ErrorBanner({ message }: { message: string | null | undefined })
     <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
       {message}
     </div>
+  );
+}
+
+const badgeBase = 'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium';
+export function Badge({ tone, children, title }: { tone: 'green' | 'blue' | 'yellow' | 'gray'; children: ReactNode; title?: string }) {
+  const c = {
+    green: 'bg-green-100 text-green-700 border-green-300 dark:bg-green-500/20 dark:text-green-400 dark:border-green-500/30',
+    blue: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/30',
+    yellow: 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-500/20 dark:text-yellow-400 dark:border-yellow-500/30',
+    gray: 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-500/20 dark:text-gray-400 dark:border-gray-500/30',
+  }[tone];
+  return <span title={title} className={`${badgeBase} ${c}`}>{children}</span>;
+}
+
+/** "Runs on" cell: node links (with active/standby badges for gateways) or a "Not placed" warning. */
+export function RunsOn({ resource, item }: { resource: string; item: any }) {
+  const p = placementOf(resource, item);
+  if (p.length === 0) {
+    const cond = (item?.status?.conditions ?? []).find((c: any) => c.type === 'Placed');
+    return <Badge tone="yellow" title={cond?.message ?? cond?.reason}>Not placed</Badge>;
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {p.map((x) => (
+        <span key={x.node + x.role} className="inline-flex items-center gap-1">
+          <NodeLink name={x.node} />
+          {x.role === 'active' && <Badge tone="green">active</Badge>}
+          {x.role === 'standby' && <Badge tone="blue">standby</Badge>}
+        </span>
+      ))}
+    </span>
   );
 }

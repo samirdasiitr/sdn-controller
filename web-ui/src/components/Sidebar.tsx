@@ -1,20 +1,50 @@
 import { NavLink } from 'react-router-dom';
 import {
-  Activity, BarChart3, ExternalLink, GitBranch, Globe, Layers, LayoutDashboard, Map, Network, Server, Shield,
+  Activity, BarChart3, Cable, HardDrive, ExternalLink, GitBranch, Globe, Layers, LayoutDashboard, Map, Network, Server, Shield,
 } from 'lucide-react';
-import { GRAFANA_URL } from '../resources';
+import { GRAFANA_URL, nodePath } from '../resources';
+import { getTopology, listNodes } from '../api';
+import { useData } from '../context';
+import { hostedByNode } from '../placement';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/vpcs', label: 'VPCs', icon: Network },
   { to: '/subnets', label: 'Subnets', icon: Layers },
+  { to: '/vnics', label: 'VNICs', icon: Cable },
   { to: '/gateways', label: 'Gateways', icon: Globe },
   { to: '/services', label: 'Services', icon: Shield },
   { to: '/nfv', label: 'NFV', icon: Server },
   { to: '/infra', label: 'Infrastructure', icon: GitBranch },
+  { to: '/nodes', label: 'Nodes', icon: HardDrive },
   { to: '/topology', label: 'Topology', icon: Map },
   { to: '/metrics', label: 'Metrics', icon: Activity },
 ];
+
+function NodeSubList() {
+  const nodes = useData(() => listNodes().catch(() => []));
+  const topo = useData(() => getTopology().catch(() => undefined));
+  const hosted = hostedByNode(topo.data);
+  if (!nodes.data?.length) return null;
+  return (
+    <ul className="mb-1 ml-5 mt-1 space-y-0.5 border-l border-gray-200 pl-3 dark:border-gray-700">
+      {nodes.data.map((n) => (
+        <li key={n.name}>
+          <NavLink
+            to={nodePath(n.name)}
+            className={({ isActive }) =>
+              `flex items-center gap-2 rounded px-2 py-1 text-xs transition-colors ${isActive ? 'text-blue-700 dark:text-blue-400' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100'}`
+            }
+          >
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${n.ready ? 'bg-green-500' : 'bg-yellow-500'}`} />
+            <span className="truncate">{n.name}</span>
+            <span className="ml-auto rounded-full bg-gray-100 px-1.5 text-[10px] dark:bg-gray-800" title="hosted services & VNICs">{hosted.get(n.name)?.length ?? 0}</span>
+          </NavLink>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export default function Sidebar() {
   return (
@@ -45,6 +75,7 @@ export default function Sidebar() {
                 <item.icon className="h-5 w-5 shrink-0" />
                 {item.label}
               </NavLink>
+              {item.to === '/nodes' && <NodeSubList />}
             </li>
           ))}
           <li>

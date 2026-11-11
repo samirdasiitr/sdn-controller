@@ -9,7 +9,7 @@ import PhysicalView, { TunnelTable, type Bridge } from '../components/topology/P
 import { EDGE_COLORS, KIND_STYLE } from '../components/topology/kinds';
 import { phaseDot } from '../components/StatusBadge';
 
-const LEGEND_KINDS = ['vpcs', 'subnets', 'internetgateways', 'natgateways', 'loadbalancers', 'firewalls', 'servicechains', 'virtualnetworkfunctions'];
+const LEGEND_KINDS = ['vpcs', 'subnets', 'internetgateways', 'natgateways', 'vnics', 'loadbalancers', 'firewalls', 'servicechains', 'virtualnetworkfunctions'];
 const EDGE_LEGEND: [string, string][] = [
   ['belongs_to', 'in VPC'], ['attached_to', 'attached to subnet'], ['uses_vnf', 'chain hop → VNF'], ['tunnel_endpoint', 'tunnel'],
 ];

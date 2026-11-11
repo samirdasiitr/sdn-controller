@@ -8,7 +8,7 @@ import ResourceTable, { type Column } from './ResourceTable';
 import ResourceModal from './ResourceModal';
 import ConfirmDialog from './ConfirmDialog';
 import { ResourceStatus } from './StatusBadge';
-import { EntityLink, EntityLinks, ErrorBanner, NodeLink } from './ui';
+import { EntityLink, EntityLinks, ErrorBanner, NodeLink, RunsOn } from './ui';
 
 const nameCol: Column = {
   key: 'metadata.name',
@@ -33,11 +33,11 @@ const subnetsCol: Column = {
   header: 'Subnets',
   render: (i) => <EntityLinks resource="subnets" ns={i.metadata.namespace} names={i.spec?.subnetRefs} />,
 };
-const activeNodeCol: Column = {
-  key: 'status.activeNode',
-  header: 'Active Node',
-  render: (i) => <NodeLink name={i.status?.activeNode} />,
-};
+const runsOnCol = (resource: string): Column => ({
+  key: 'status.nodes',
+  header: 'Runs on',
+  render: (i) => <RunsOn resource={resource} item={i} />,
+});
 
 export const COLUMNS: Record<string, Column[]> = {
   vpcs: [
@@ -67,27 +67,27 @@ export const COLUMNS: Record<string, Column[]> = {
     nameCol, nsCol, vpcCol,
     { key: 'spec.externalInterface', header: 'Interface' },
     { key: 'spec.externalIPs', header: 'External IPs', render: (i) => (i.spec?.externalIPs ?? []).join(', ') || '-' },
-    activeNodeCol, statusCol,
+    runsOnCol('internetgateways'), statusCol,
   ],
   natgateways: [
     nameCol, nsCol, vpcCol, subnetsCol,
     { key: 'spec.externalIP', header: 'External IP' },
     { key: 'spec.type', header: 'Type' },
-    activeNodeCol, statusCol,
+    runsOnCol('natgateways'), statusCol,
   ],
   loadbalancers: [
     nameCol, nsCol, vpcCol,
     { key: 'vip', header: 'VIP', render: (i) => `${i.spec?.frontend?.ip ?? '-'}${i.spec?.frontend?.ports?.length ? ':' + i.spec.frontend.ports.map((p: any) => p.port).join(',') : ''}` },
     { key: 'spec.algorithm', header: 'Algorithm' },
     { key: 'backends', header: 'Backends', render: (i) => `${i.status?.activeBackends ?? '?'} / ${i.spec?.backends?.length ?? 0}` },
-    statusCol,
+    runsOnCol('loadbalancers'), statusCol,
   ],
   firewalls: [
     nameCol, nsCol, vpcCol, subnetsCol,
     { key: 'spec.defaultAction', header: 'Default' },
     { key: 'rules', header: 'Rules', render: (i) => i.spec?.rules?.length ?? 0 },
     { key: 'spec.stateful', header: 'Stateful', render: (i) => (i.spec?.stateful ? 'yes' : 'no') },
-    statusCol,
+    runsOnCol('firewalls'), statusCol,
   ],
   servicechains: [
     nameCol, nsCol, vpcCol, subnetCol(),
@@ -105,13 +105,24 @@ export const COLUMNS: Record<string, Column[]> = {
         </span>
       ),
     },
-    statusCol,
+    runsOnCol('servicechains'), statusCol,
   ],
   virtualnetworkfunctions: [
     nameCol, nsCol,
     { key: 'spec.type', header: 'Type' },
     { key: 'spec.image', header: 'Image', render: (i) => i.spec?.image ?? i.spec?.vmConfig?.image ?? '-' },
     { key: 'replicas', header: 'Ready/Replicas', render: (i) => `${i.status?.readyReplicas ?? 0} / ${i.spec?.replicas ?? 1}` },
+    runsOnCol('virtualnetworkfunctions'), statusCol,
+  ],
+  vnics: [
+    nameCol, nsCol, subnetCol(),
+    { key: 'status.vpcRef', header: 'VPC', render: (i) => <EntityLink resource="vpcs" ns={i.metadata.namespace} name={i.status?.vpcRef} /> },
+    { key: 'status.ipAddress', header: 'IP', render: (i) => i.status?.ipAddress ?? i.spec?.ipAddress ?? '-' },
+    { key: 'status.macAddress', header: 'MAC', render: (i) => <span className="font-mono text-xs">{i.status?.macAddress ?? i.spec?.macAddress ?? '-'}</span> },
+    { key: 'spec.attachment', header: 'Workload', render: (i) => (i.spec?.attachment ? `${i.spec.attachment.kind}/${i.spec.attachment.name}` : '-') },
+    { key: 'status.boundNode', header: 'Node', render: (i) => <NodeLink name={i.status?.boundNode || i.spec?.nodeName} /> },
+    { key: 'status.ovsPort', header: 'Port', render: (i) => (i.status?.ovsPort ? `${i.status.bridge ?? '?'}/${i.status.ovsPort}` : '-') },
+    { key: 'spec.portSecurity', header: 'Port sec.', render: (i) => (i.spec?.portSecurity === false ? 'off' : 'on') },
     statusCol,
   ],
   tunnels: [

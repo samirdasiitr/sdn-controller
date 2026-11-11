@@ -10,6 +10,7 @@ import { EntityLink, MiniTable } from '../ui';
 import StatusBadge from '../StatusBadge';
 import { HOST_W, HostCard, hostHeight, type HostData } from './cards';
 import { EDGE_COLORS } from './kinds';
+import { isPlaceable, placementOf } from '../../placement';
 
 export interface Bridge { node: string; bridge: string; up: boolean; ports?: number; flows?: number }
 
@@ -20,13 +21,13 @@ export function layoutPhysical(topo: TopologyData, k8s: K8sNode[], bridges: Brid
   const host = (name: string): HostData => {
     let h = hosts.get(name);
     if (!h) {
-      h = { name, bridges: [], vpcs: [], roles: [], external: true, note: 'not a Kubernetes node' };
+      h = { name, bridges: [], vpcs: [], chips: [], external: true, note: 'not a Kubernetes node' };
       hosts.set(name, h);
     }
     return h;
   };
   for (const n of k8s) {
-    hosts.set(n.name, { name: n.name, ip: n.internalIP, ready: n.ready, bridges: [], vpcs: [], roles: [], note: n.kubeletVersion });
+    hosts.set(n.name, { name: n.name, ip: n.internalIP, ready: n.ready, bridges: [], vpcs: [], chips: [], note: n.kubeletVersion });
   }
   for (const b of bridges) {
     const h = host(b.node);
@@ -38,8 +39,10 @@ export function layoutPhysical(topo: TopologyData, k8s: K8sNode[], bridges: Brid
       for (const a of n.status?.attachedNodes ?? [])
         host(a.nodeName).vpcs.push({ name: n.name, ns: n.namespace, vni: n.spec?.vni ?? n.status?.allocatedVNI, tunnelIP: a.tunnelIP, bridge: a.bridge });
     }
-    if (n.status?.activeNode && (n.resource === 'internetgateways' || n.resource === 'natgateways'))
-      host(n.status.activeNode).roles.push({ resource: n.resource, ns: n.namespace, name: n.name });
+    if (n.resource !== 'vnics' && isPlaceable(n.resource)) {
+      for (const p of placementOf(n.resource, n))
+        host(p.node).chips.push({ resource: n.resource, ns: n.namespace, name: n.name, role: p.role });
+    }
     if (n.resource === 'tunnels') {
       for (const k of ['localEndpoint', 'remoteEndpoint']) {
         const e = n.spec?.[k];
@@ -50,6 +53,13 @@ export function layoutPhysical(topo: TopologyData, k8s: K8sNode[], bridges: Brid
       }
     }
   }
+
+  // VNICs: one summary chip per node
+  const vnicsByNode = new Map<string, TopologyNode[]>();
+  for (const n of topo.nodes.filter((x) => x.resource === 'vnics'))
+    for (const p of placementOf('vnics', n)) vnicsByNode.set(p.node, [...(vnicsByNode.get(p.node) ?? []), n]);
+  for (const [node, list] of vnicsByNode)
+    host(node).chips.push({ resource: 'vnics', name: `${list.length} VNIC${list.length === 1 ? '' : 's'}`, label: '', title: list.map((v) => v.name).join(', ') });
 
   // group tunnels per node pair
   const pairs = new Map<string, { a: string; b: string; items: TopologyNode[] }>();

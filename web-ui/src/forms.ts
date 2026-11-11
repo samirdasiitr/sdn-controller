@@ -13,7 +13,9 @@ export interface FieldDef {
   label: string;
   type: FieldType;
   options?: string[];
-  optionsFrom?: 'vpcs' | 'subnets' | 'vnfs';
+  optionsFrom?: 'vpcs' | 'subnets' | 'vnfs' | 'nodes' | 'firewalls';
+  /** checkbox that is on by default and always emits an explicit boolean */
+  boolDefault?: boolean;
   required?: boolean | ((o: any) => boolean);
   showIf?: (o: any) => boolean;
   stripWhenHidden?: boolean;
@@ -181,6 +183,20 @@ export const FORMS: Record<string, { fields: FieldDef[]; defaults?: any }> = {
       { path: 'spec.match.dstCIDR', label: 'Match dst CIDR', type: 'text' },
       { path: 'spec.offload.enabled', label: 'Offload enabled', type: 'checkbox' },
       nodeSelector,
+    ],
+  },
+  vnics: {
+    defaults: { spec: { portSecurity: true } },
+    fields: [
+      { path: 'spec.subnetRef', label: 'Subnet', type: 'select', optionsFrom: 'subnets', required: true, readOnlyOnEdit: true },
+      { path: 'spec.ipAddress', label: 'Static IP (optional)', type: 'text', placeholder: 'auto-allocate' },
+      { path: 'spec.macAddress', label: 'MAC address (optional)', type: 'text', placeholder: 'auto-generate' },
+      { path: 'spec.attachment.kind', label: 'Workload kind', type: 'select', options: ['VM', 'VNF', 'Pod', 'Other'], required: (o) => !!o?.spec?.attachment?.name },
+      { path: 'spec.attachment.name', label: 'Workload name', type: 'text', required: (o) => !!o?.spec?.attachment?.kind },
+      { path: 'spec.nodeName', label: 'Node', type: 'select', optionsFrom: 'nodes', help: 'Leave empty to let the controller place it.' },
+      { path: 'spec.mtu', label: 'MTU', type: 'number' },
+      { path: 'spec.portSecurity', label: 'Port security', type: 'checkbox', boolDefault: true },
+      { path: 'spec.firewallRef', label: 'Firewall', type: 'select', optionsFrom: 'firewalls' },
     ],
   },
   virtualnetworkfunctions: {

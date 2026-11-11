@@ -10,7 +10,7 @@ const statusColors: Record<string, string> = {
   Ready: green, Active: green, Running: green, Established: green, Bound: green, Configured: green, Up: green,
   Failed: red, Error: red, NotReady: red, Down: red,
   Pending: yellow, Degraded: yellow, Establishing: yellow,
-  Provisioning: blue, Creating: blue,
+  Provisioning: blue, Creating: blue, Allocated: blue,
   Terminating: orange, Deleting: orange,
 };
 
@@ -18,7 +18,7 @@ export const phaseDot: Record<string, string> = {
   Ready: '#22c55e', Active: '#22c55e', Running: '#22c55e', Established: '#22c55e', Configured: '#22c55e',
   Failed: '#ef4444', Error: '#ef4444', NotReady: '#ef4444',
   Pending: '#eab308', Degraded: '#eab308', Establishing: '#eab308',
-  Provisioning: '#3b82f6', Creating: '#3b82f6',
+  Provisioning: '#3b82f6', Creating: '#3b82f6', Allocated: '#3b82f6', Bound: '#22c55e',
   Terminating: '#f97316', Deleting: '#f97316',
 };
 

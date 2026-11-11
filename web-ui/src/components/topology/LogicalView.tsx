@@ -8,18 +8,24 @@ import { useNavigate } from 'react-router-dom';
 import type { TopologyData } from '../../api';
 import { useTheme } from '../../context';
 import { detailPath } from '../../resources';
+import { PLACED } from '../../placement';
 import { CARD_H, CARD_W, GroupBox, ResourceCard } from './cards';
 import { EDGE_COLORS, KIND_STYLE, facts } from './kinds';
 
 const nodeTypes = { card: ResourceCard, group: GroupBox };
 const EXCLUDED = new Set(['nodes', 'tunnels', 'nodenetworkconfigs']);
+const HOST_EDGES = new Set(['active_on', 'standby_on', 'attached_node', 'runs_on']);
 const PAD = 28;
 const HEADER = 40;
 
 export function layoutLogical(topo: TopologyData, dir: 'TB' | 'LR') {
   const nodes = topo.nodes.filter((n) => !EXCLUDED.has(n.resource));
   const ids = new Set(nodes.map((n) => n.id));
-  const edges = topo.edges.filter((e) => ids.has(e.source) && ids.has(e.target) && e.type !== 'active_on' && e.type !== 'attached_node');
+  const edges = topo.edges.filter((e) => ids.has(e.source) && ids.has(e.target) && !HOST_EDGES.has(e.type));
+  const hostsOf = new Map<string, string[]>();
+  for (const e of topo.edges)
+    if (HOST_EDGES.has(e.type) && e.type !== 'attached_node' && e.target.startsWith('nodes/'))
+      hostsOf.set(e.source, [...(hostsOf.get(e.source) ?? []), e.target.replace('nodes//', '') + (e.type === 'standby_on' ? ' (standby)' : '')]);
 
   // assign each node to a VPC group (BFS from VPC nodes along parent->child edges)
   const children = new Map<string, string[]>();
@@ -92,6 +98,7 @@ export function layoutLogical(topo: TopologyData, dir: 'TB' | 'LR') {
         data: {
           resource: m.resource, kind: m.kind, name: m.name, phase: m.status?.phase,
           terminating: !!m.deletionTimestamp, facts: facts(m), dir,
+          hosts: hostsOf.get(m.id), notPlaced: PLACED.includes(m.resource) && !hostsOf.has(m.id),
         },
       });
     });
@@ -110,7 +117,7 @@ export function layoutLogical(topo: TopologyData, dir: 'TB' | 'LR') {
       labelStyle: { fontSize: 10 },
       labelBgPadding: [4, 2],
       labelBgBorderRadius: 4,
-      style: { stroke: c, strokeWidth: 1.5 },
+      style: { stroke: c, strokeWidth: 1.5, strokeDasharray: e.type === 'protected_by' ? '5 4' : undefined },
       markerEnd: { type: MarkerType.ArrowClosed, color: c, width: 16, height: 16 },
     } as Edge;
   });

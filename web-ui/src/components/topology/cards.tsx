@@ -6,7 +6,7 @@ import { phaseDot } from '../StatusBadge';
 import { detailPath } from '../../resources';
 
 export const CARD_W = 210;
-export const CARD_H = 82;
+export const CARD_H = 96;
 
 export interface CardData {
   resource: string;
@@ -17,6 +17,8 @@ export interface CardData {
   facts: string[];
   dir: 'TB' | 'LR';
   external?: boolean;
+  hosts?: string[];
+  notPlaced?: boolean;
 }
 
 export function ResourceCard({ data, selected }: NodeProps<CardData>) {
@@ -44,6 +46,13 @@ export function ResourceCard({ data, selected }: NodeProps<CardData>) {
       {data.facts.slice(0, 2).map((f, i) => (
         <div key={i} className="truncate text-[11px] leading-tight text-gray-500 dark:text-gray-400" title={f}>{f}</div>
       ))}
+      {data.hosts && data.hosts.length > 0 && (
+        <div className="flex items-center gap-1 truncate text-[10px] text-sky-600 dark:text-sky-400" title={`node: ${data.hosts.join(', ')}`}>
+          <Server className="h-3 w-3 shrink-0" />
+          <span className="truncate">node: {data.hosts.join(', ')}</span>
+        </div>
+      )}
+      {data.notPlaced && <div className="text-[10px] text-yellow-600 dark:text-yellow-400">not placed</div>}
       <Handle type="source" position={sp} className="!h-2 !w-2 !border-0 !bg-gray-400" />
     </div>
   );
@@ -77,11 +86,11 @@ export interface HostData {
   note?: string;
   bridges: { name: string; up: boolean; ports?: number; flows?: number }[];
   vpcs: { name: string; ns: string; vni?: number; tunnelIP?: string; bridge?: string }[];
-  roles: { resource: string; ns: string; name: string }[];
+  chips: { resource: string; ns?: string; name: string; label?: string; title?: string; role?: string }[];
 }
 
 export const hostHeight = (d: HostData) =>
-  64 + (d.bridges.length ? 22 + d.bridges.length * 20 : 0) + (d.vpcs.length ? 22 + d.vpcs.length * 20 : 0) + (d.roles.length ? 22 + d.roles.length * 20 : 0) + 12;
+  64 + (d.bridges.length ? 22 + d.bridges.length * 20 : 0) + (d.vpcs.length ? 22 + d.vpcs.length * 20 : 0) + (d.chips.length ? 22 + Math.ceil(d.chips.length / 2) * 26 : 0) + 12;
 export const HOST_W = 340;
 
 export function HostCard({ data, selected }: NodeProps<HostData>) {
@@ -126,15 +135,27 @@ export function HostCard({ data, selected }: NodeProps<HostData>) {
           ))}
         </div>
       )}
-      {data.roles.length > 0 && (
+      {data.chips.length > 0 && (
         <div className={sec}>
-          <div className={h}>Hosts</div>
-          {data.roles.map((r) => (
-            <div key={r.resource + r.name} className="flex h-5 items-center gap-2 text-xs">
-              <span className="text-gray-500">{KIND_STYLE[r.resource]?.label}</span>
-              <Link to={detailPath(r.resource, r.ns, r.name)} className="nodrag text-blue-600 hover:underline dark:text-blue-400">{r.name}</Link>
-            </div>
-          ))}
+          <div className={h}>Hosted services</div>
+          <div className="flex flex-wrap gap-1">
+            {data.chips.map((c) => {
+              const st = KIND_STYLE[c.resource];
+              const body = (
+                <>
+                  <span className="font-semibold" style={{ color: st?.color }}>{c.label ?? st?.label}</span>
+                  <span className="max-w-[110px] truncate">{c.name}</span>
+                  {c.role && c.role !== 'placed' && c.role !== 'bound' && <span className="text-gray-400">({c.role})</span>}
+                </>
+              );
+              const cls = 'nodrag flex h-6 items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 text-[11px] text-gray-700 dark:border-gray-600 dark:bg-gray-700/50 dark:text-gray-200';
+              return c.ns ? (
+                <Link key={c.resource + c.ns + c.name + (c.role ?? '')} to={detailPath(c.resource, c.ns, c.name)} title={c.title} className={cls + ' hover:border-blue-400'}>{body}</Link>
+              ) : (
+                <span key={c.resource + c.name} title={c.title} className={cls}>{body}</span>
+              );
+            })}
+          </div>
         </div>
       )}
       <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-gray-400" />

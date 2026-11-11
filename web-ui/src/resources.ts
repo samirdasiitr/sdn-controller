@@ -14,6 +14,7 @@ export const RESOURCES: Record<string, ResourceMeta> = {
   natgateways: { resource: 'natgateways', kind: 'NATGateway', apiVersion: g('gateway'), label: 'NAT Gateway' },
   loadbalancers: { resource: 'loadbalancers', kind: 'LoadBalancer', apiVersion: g('service'), label: 'Load Balancer' },
   firewalls: { resource: 'firewalls', kind: 'Firewall', apiVersion: g('service'), label: 'Firewall' },
+  vnics: { resource: 'vnics', kind: 'VNic', apiVersion: g('vpc'), label: 'VNIC' },
   servicechains: { resource: 'servicechains', kind: 'ServiceChain', apiVersion: g('nfv'), label: 'Service Chain' },
   virtualnetworkfunctions: { resource: 'virtualnetworkfunctions', kind: 'VirtualNetworkFunction', apiVersion: g('nfv'), label: 'VNF' },
   tunnels: { resource: 'tunnels', kind: 'Tunnel', apiVersion: g('infra'), label: 'Tunnel' },
@@ -29,6 +30,6 @@ export const KIND_TO_RESOURCE: Record<string, string> = Object.fromEntries(
 export const detailPath = (resource: string, ns: string, name: string) =>
   `/${resource}/${encodeURIComponent(ns)}/${encodeURIComponent(name)}`;
 
-export const nodePath = (name: string) => `/topology?view=physical&node=${encodeURIComponent(name)}`;
+export const nodePath = (name: string) => `/nodes/${encodeURIComponent(name)}`;
 
 export const GRAFANA_URL = 'http://localhost:3000';
