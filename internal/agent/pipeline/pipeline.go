@@ -348,7 +348,7 @@ func (b *builder) policyFlows(pol *policy) {
 				}
 			}
 		}
-		b.add("table=%d,priority=0,reg1=%d,actions=%s", tbl.table, pol.id, b.verdict(pol, !pol.deny, tbl.next))
+		b.add("table=%d,priority=0,ip,reg1=%d,actions=%s", tbl.table, pol.id, b.verdict(pol, !pol.deny, tbl.next))
 	}
 }
 

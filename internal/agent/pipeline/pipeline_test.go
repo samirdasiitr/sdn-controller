@@ -85,7 +85,7 @@ func TestBuildFirewall(t *testing.T) {
 	has(t, o.Flows, "table=30,priority=65486,ct_state=+trk+new,reg1=1,tcp,nw_src=10.9.0.0/16,tp_dst=0x0016,actions=drop")
 	has(t, o.Flows, "table=30,priority=65436,ct_state=+trk+new,reg1=1,tcp,tp_dst=0x0050,actions=ct(commit,zone=NXM_NX_REG0[0..15]),ct_clear,resubmit(,40)")
 	has(t, o.Flows, "table=10,priority=65526,ct_state=+trk+new,reg1=1,ip,actions=ct(commit")
-	has(t, o.Flows, "table=30,priority=0,reg1=1,actions=drop") // default Deny
+	has(t, o.Flows, "table=30,priority=0,ip,reg1=1,actions=drop") // default Deny
 	has(t, o.Flows, "table=30,priority=100,ct_state=+trk+est,reg1=1")
 	// only the VNic in the protected subnet gets dispatched
 	has(t, o.Flows, "table=5,priority=100,ip,in_port=2,actions=load:2->NXM_NX_REG0[0..15],load:1->NXM_NX_REG1[],ct(table=10,zone=NXM_NX_REG0[0..15])")
@@ -272,11 +272,11 @@ func TestInterSubnetIsolationWithoutFirewall(t *testing.T) {
 	has(t, o.Flows, "table=30,priority=3,ct_state=+trk+new,reg1=1,ip,nw_src=10.0.2.0/24,actions=ct(commit")
 	has(t, o.Flows, "table=30,priority=2,ct_state=+trk+new,reg1=2,ip,nw_src=10.0.0.0/16,actions=drop")
 	has(t, o.Flows, "table=30,priority=2,ct_state=+trk+new,reg1=1,ip,nw_src=10.0.0.0/16,actions=drop")
-	has(t, o.Flows, "table=30,priority=0,reg1=1,actions=ct(commit")
+	has(t, o.Flows, "table=30,priority=0,ip,reg1=1,actions=ct(commit")
 	// replies of connections the VNic started stay allowed
 	has(t, o.Flows, "table=30,priority=100,ct_state=+trk+est,reg1=1")
 	// egress is not restricted
-	has(t, o.Flows, "table=10,priority=0,reg1=1,actions=ct(commit")
+	has(t, o.Flows, "table=10,priority=0,ip,reg1=1,actions=ct(commit")
 }
 
 func TestInterSubnetAllowDisablesIsolation(t *testing.T) {
