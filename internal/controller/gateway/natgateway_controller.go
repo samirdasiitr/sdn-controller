@@ -19,9 +19,9 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,6 +33,7 @@ import (
 
 	gatewayv1alpha1 "github.com/sdncontroller/sdncontroller/api/gateway/v1alpha1"
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
+	"github.com/sdncontroller/sdncontroller/internal/placement"
 )
 
 const natGatewayFinalizer = "natgateway.sdncontroller.io/finalizer"
@@ -116,40 +117,51 @@ func (r *NATGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	r.setCondition(&natgw, "NATConfigured", metav1.ConditionTrue, "Configured",
 		fmt.Sprintf("NAT type %s configured with external IP %s", natType, natgw.Spec.ExternalIP))
 
-	// Select active node
-	var nodeList corev1.NodeList
-	if natgw.Spec.NodeSelector != nil {
-		selector, err := metav1.LabelSelectorAsSelector(natgw.Spec.NodeSelector)
-		if err != nil {
-			r.setCondition(&natgw, "NodeSelected", metav1.ConditionFalse, "InvalidSelector", err.Error())
-			natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseFailed
-			_ = r.Status().Update(ctx, &natgw)
-			return ctrl.Result{}, nil
-		}
-		if err := r.List(ctx, &nodeList, &client.ListOptions{LabelSelector: selector}); err != nil {
-			return ctrl.Result{}, err
-		}
-	} else {
-		if err := r.List(ctx, &nodeList); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	readyNodes := filterReadyNodes(nodeList.Items)
-	if len(readyNodes) > 0 {
-		natgw.Status.ActiveNode = readyNodes[0].Name
-		r.setCondition(&natgw, "NodeSelected", metav1.ConditionTrue, "NodeAssigned",
-			fmt.Sprintf("Active: %s", natgw.Status.ActiveNode))
-	} else {
-		r.setCondition(&natgw, "NodeSelected", metav1.ConditionFalse, "NoReadyNodes", "No ready nodes matching selector")
+	// Select the active node among Ready nodes that match the selector and are attached to the VPC.
+	nodes, err := placement.Nodes(ctx, r.Client, natgw.Namespace, natgw.Spec.VPCRef, natgw.Spec.NodeSelector)
+	if err != nil {
+		r.setCondition(&natgw, "NodeSelected", metav1.ConditionFalse, "InvalidSelector", err.Error())
 		natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseFailed
 		_ = r.Status().Update(ctx, &natgw)
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		return ctrl.Result{}, nil
 	}
+	if len(nodes) == 0 {
+		r.setCondition(&natgw, "NodeSelected", metav1.ConditionFalse, "NoReadyNodes", "No Ready node matches the selector and is attached to the VPC")
+		natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseFailed
+		natgw.Status.ActiveNode = ""
+		return ctrl.Result{}, r.Status().Update(ctx, &natgw)
+	}
+	// Keep the current active node while it is still eligible (avoid flapping).
+	active := nodes[0]
+	for _, n := range nodes {
+		if n == natgw.Status.ActiveNode {
+			active = n
+		}
+	}
+	natgw.Status.ActiveNode = active
+	r.setCondition(&natgw, "NodeSelected", metav1.ConditionTrue, "NodeAssigned", fmt.Sprintf("Active: %s", active))
 
-	// Mark Ready
-	natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseReady
-	r.setCondition(&natgw, "Ready", metav1.ConditionTrue, "Provisioned", "NATGateway is ready")
+	// Ready only when the active node's agent has programmed this generation.
+	e, ok := natgw.Status.Enforcement[active]
+	switch {
+	case natType != gatewayv1alpha1.NATTypeSNAT && ok && e.ObservedGeneration == natgw.Generation && !e.Programmed:
+		natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseFailed
+		r.setCondition(&natgw, "Ready", metav1.ConditionFalse, "NotImplemented", e.Message)
+	case !ok || e.ObservedGeneration != natgw.Generation:
+		natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseProvisioning
+		r.setCondition(&natgw, "Ready", metav1.ConditionFalse, "WaitingForAgent", fmt.Sprintf("waiting for the agent on %s to program SNAT", active))
+	case !e.Programmed:
+		natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseFailed
+		r.setCondition(&natgw, "Ready", metav1.ConditionFalse, "ProgrammingFailed", e.Message)
+	default:
+		natgw.Status.Phase = gatewayv1alpha1.GatewayPhaseReady
+		msg := fmt.Sprintf("SNAT %v -> %s programmed in OVS on %s", natgw.Spec.SubnetRefs, natgw.Spec.ExternalIP, active)
+		if len(e.Warnings) > 0 {
+			msg += " (warnings: " + strings.Join(e.Warnings, "; ") + ")"
+		}
+		r.setCondition(&natgw, "Ready", metav1.ConditionTrue, "Programmed", msg)
+	}
+	natgw.Status.TranslationCount = e.Translations
 
 	if err := r.Status().Update(ctx, &natgw); err != nil {
 		return ctrl.Result{}, err
@@ -186,6 +198,8 @@ func (r *NATGatewayReconciler) setCondition(natgw *gatewayv1alpha1.NATGateway, c
 func (r *NATGatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gatewayv1alpha1.NATGateway{}).
+		Watches(&vpcv1alpha1.VPC{}, placement.ByVPC(r.Client, func() client.ObjectList { return &gatewayv1alpha1.NATGatewayList{} },
+			func(o client.Object) string { return o.(*gatewayv1alpha1.NATGateway).Spec.VPCRef })).
 		Named("gateway-natgateway").
 		Complete(r)
 }

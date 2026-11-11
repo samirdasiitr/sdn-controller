@@ -12,7 +12,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -162,23 +161,9 @@ func (r *Reconciler) reconcileVPC(ctx context.Context, v *vpcv1alpha1.VPC) error
 		}
 	}
 
-	// Route flows (from status.routes, distributed via the Kubernetes API).
-	flows := []string{"priority=50,arp,actions=NORMAL"}
-	seen := map[string]bool{}
-	var dests []string
-	for _, rt := range v.Status.Routes {
-		if !seen[rt.Destination] {
-			seen[rt.Destination] = true
-			dests = append(dests, rt.Destination)
-		}
-	}
-	sort.Strings(dests)
-	for _, d := range dests {
-		flows = append(flows, fmt.Sprintf("priority=100,ip,nw_dst=%s,actions=NORMAL", d))
-	}
-	flows = append(flows, r.bindVNics(ctx, v, bridge, vpcSubnets)...)
-	flows = append(flows, "priority=0,actions=NORMAL")
-	if err := r.ovs.ReplaceFlows(ctx, bridge, flows); err != nil {
+	// Compile and install the pipeline: port security, firewalls, load balancers, NAT gateways.
+	bound := r.bindVNics(ctx, v, bridge, vpcSubnets)
+	if err := r.programPipeline(ctx, v, bridge, bound, wantPorts, cidrs); err != nil {
 		return err
 	}
 

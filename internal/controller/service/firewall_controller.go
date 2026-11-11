@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -119,23 +120,46 @@ func (r *FirewallReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		r.setCondition(&fw, "RulesValid", metav1.ConditionTrue, "Valid", "No rules configured, using default action")
 	}
 
-	// Set ActiveRules count
-	fw.Status.ActiveRules = int32(len(fw.Spec.Rules))
-
-	// Mark Active
-	if nodes, err := placement.Nodes(ctx, r.Client, fw.Namespace, fw.Spec.VPCRef, fw.Spec.NodeSelector); err != nil {
+	// Placement, then what the node agents actually programmed.
+	nodes, err := placement.Nodes(ctx, r.Client, fw.Namespace, fw.Spec.VPCRef, fw.Spec.NodeSelector)
+	if err != nil {
 		return ctrl.Result{}, err
-	} else {
-		fw.Status.Nodes = nodes
-		if len(nodes) == 0 {
-			r.setCondition(&fw, "Placed", metav1.ConditionFalse, "NoEligibleNodes", "no Ready node matches nodeSelector and VPC attachment")
-		} else {
-			r.setCondition(&fw, "Placed", metav1.ConditionTrue, "Placed", fmt.Sprintf("running on %v", nodes))
-		}
 	}
-	fw.Status.Phase = servicev1alpha1.FirewallPhaseActive
-	r.setCondition(&fw, "Ready", metav1.ConditionTrue, "Active",
-		fmt.Sprintf("Firewall active with %d rule(s), default action: %s", fw.Status.ActiveRules, fw.Spec.DefaultAction))
+	fw.Status.Nodes = nodes
+	if len(nodes) == 0 {
+		r.setCondition(&fw, "Placed", metav1.ConditionFalse, "NoEligibleNodes", "no Ready node matches nodeSelector and VPC attachment")
+	} else {
+		r.setCondition(&fw, "Placed", metav1.ConditionTrue, "Placed", fmt.Sprintf("scheduled on %v", nodes))
+	}
+	obs := map[string]placement.Observed{}
+	var packets int64
+	var warnings []string
+	for n, e := range fw.Status.Enforcement {
+		obs[n] = placement.Observed{Generation: e.ObservedGeneration, Programmed: e.Programmed, Message: e.Message}
+		packets += e.MatchedPackets
+		warnings = append(warnings, e.Warnings...)
+	}
+	fw.Status.MatchedPackets = packets
+	done, waiting, errs := placement.Evaluate(nodes, fw.Generation, obs)
+	switch {
+	case len(nodes) == 0:
+		fw.Status.Phase, fw.Status.ActiveRules = servicev1alpha1.FirewallPhasePending, 0
+		r.setCondition(&fw, "Ready", metav1.ConditionFalse, "NoEligibleNodes", "no node to enforce on")
+	case len(errs) > 0:
+		fw.Status.Phase, fw.Status.ActiveRules = servicev1alpha1.FirewallPhaseFailed, 0
+		r.setCondition(&fw, "Ready", metav1.ConditionFalse, "EnforcementFailed", strings.Join(errs, "; "))
+	case len(waiting) > 0:
+		fw.Status.Phase, fw.Status.ActiveRules = servicev1alpha1.FirewallPhasePending, 0
+		r.setCondition(&fw, "Ready", metav1.ConditionFalse, "WaitingForAgents",
+			fmt.Sprintf("enforced on %d/%d nodes, waiting for %v", len(done), len(nodes), waiting))
+	default:
+		fw.Status.Phase, fw.Status.ActiveRules = servicev1alpha1.FirewallPhaseActive, int32(len(fw.Spec.Rules))
+		msg := fmt.Sprintf("enforced in OVS on %d node(s) with %d rule(s), default action: %s", len(done), len(fw.Spec.Rules), fw.Spec.DefaultAction)
+		if len(warnings) > 0 {
+			msg += " (warnings: " + strings.Join(dedupe(warnings), "; ") + ")"
+		}
+		r.setCondition(&fw, "Ready", metav1.ConditionTrue, "Enforced", msg)
+	}
 
 	if err := r.Status().Update(ctx, &fw); err != nil {
 		return ctrl.Result{}, err
@@ -175,4 +199,16 @@ func (r *FirewallReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&vpcv1alpha1.VPC{}, placement.ByVPC(r.Client, func() client.ObjectList { return &servicev1alpha1.FirewallList{} }, func(o client.Object) string { return o.(*servicev1alpha1.Firewall).Spec.VPCRef })).
 		Named("service-firewall").
 		Complete(r)
+}
+
+func dedupe(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, x := range in {
+		if !seen[x] {
+			seen[x] = true
+			out = append(out, x)
+		}
+	}
+	return out
 }

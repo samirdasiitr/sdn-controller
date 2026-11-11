@@ -117,6 +117,30 @@ type FirewallSpec struct {
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 }
 
+// EnforcementStatus is reported by each node agent after it programs its OVS
+// pipeline for this object. It is keyed by node name in status.enforcement.
+type EnforcementStatus struct {
+	// observedGeneration is the spec generation the agent compiled and installed.
+	ObservedGeneration int64 `json:"observedGeneration"`
+	// programmed is true when the flows for this generation are installed.
+	Programmed bool `json:"programmed"`
+	// flows is the number of OpenFlow rules installed for this object on the node.
+	// +optional
+	Flows int32 `json:"flows,omitempty"`
+	// matchedPackets is the packet count of this object's rules on the node (firewalls).
+	// +optional
+	MatchedPackets int64 `json:"matchedPackets,omitempty"`
+	// connections is the number of connections currently tracked on the node (load balancers).
+	// +optional
+	Connections int64 `json:"connections,omitempty"`
+	// message carries the error when programming failed.
+	// +optional
+	Message string `json:"message,omitempty"`
+	// warnings are non-fatal limitations (e.g. health checks not implemented).
+	// +optional
+	Warnings []string `json:"warnings,omitempty"`
+}
+
 // FirewallPhase represents the lifecycle phase.
 // +kubebuilder:validation:Enum=Pending;Active;Failed
 type FirewallPhase string
@@ -129,6 +153,10 @@ const (
 
 // FirewallStatus defines the observed state of Firewall.
 type FirewallStatus struct {
+	// enforcement is what each node agent actually programmed, keyed by node name.
+	// +optional
+	Enforcement map[string]EnforcementStatus `json:"enforcement,omitempty"`
+
 	// nodes lists the hosts this resource is running on (Ready nodes matching
 	// nodeSelector that are attached to the VPC).
 	// +optional

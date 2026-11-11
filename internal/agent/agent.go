@@ -32,6 +32,7 @@ import (
 
 	infrav1alpha1 "github.com/sdncontroller/sdncontroller/api/infra/v1alpha1"
 	gwv1alpha1 "github.com/sdncontroller/sdncontroller/api/gateway/v1alpha1"
+	servicev1alpha1 "github.com/sdncontroller/sdncontroller/api/service/v1alpha1"
 	nfvv1alpha1 "github.com/sdncontroller/sdncontroller/api/nfv/v1alpha1"
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
 	agentbond "github.com/sdncontroller/sdncontroller/internal/agent/bond"
@@ -54,6 +55,7 @@ func init() {
 	utilruntime.Must(nfvv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(vpcv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(gwv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(servicev1alpha1.AddToScheme(scheme))
 }
 
 // Agent orchestrates all node agent subsystems: OVS, tunnels, offload, bonds, NFV, libvirt, and DPU.

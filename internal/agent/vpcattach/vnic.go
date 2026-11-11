@@ -2,7 +2,6 @@ package vpcattach
 
 import (
 	"context"
-	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	vpcv1alpha1 "github.com/sdncontroller/sdncontroller/api/vpc/v1alpha1"
+	"github.com/sdncontroller/sdncontroller/internal/agent/pipeline"
 )
 
 // ovsOut runs an OVS command and returns trimmed stdout.
@@ -49,14 +49,14 @@ func portsByMAC(ctx context.Context) map[string]string {
 
 // bindVNics binds VNics of this VPC that have a local port, returns the port
 // security flows to install on the VPC bridge, and reports status.
-func (r *Reconciler) bindVNics(ctx context.Context, v *vpcv1alpha1.VPC, bridge string, subnetNames map[string]bool) []string {
+func (r *Reconciler) bindVNics(ctx context.Context, v *vpcv1alpha1.VPC, bridge string, subnetNames map[string]bool) []pipeline.Port {
 	var vnics vpcv1alpha1.VNicList
 	if err := r.c.List(ctx, &vnics, client.InNamespace(v.Namespace)); err != nil {
 		r.log.Error("list VNics", "error", err)
 		return nil
 	}
 	ports := portsByMAC(ctx)
-	var flows []string
+	var bound []pipeline.Port
 	for i := range vnics.Items {
 		vn := &vnics.Items[i]
 		if !subnetNames[vn.Spec.SubnetRef] || vn.Status.MACAddress == "" || vn.Status.IPAddress == "" || !vn.DeletionTimestamp.IsZero() {
@@ -93,22 +93,13 @@ func (r *Reconciler) bindVNics(ctx context.Context, v *vpcv1alpha1.VPC, bridge s
 		if err != nil || perr != nil || ofport <= 0 {
 			continue
 		}
-		if vn.Spec.PortSecurity == nil || *vn.Spec.PortSecurity {
-			flows = append(flows, portSecurityFlows(ofport, vn.Status.MACAddress, vn.Status.IPAddress)...)
-		}
+		bound = append(bound, pipeline.Port{
+			Key: vn.Namespace + "/" + vn.Name, IP: vn.Status.IPAddress, MAC: vn.Status.MACAddress, Subnet: vn.Spec.SubnetRef,
+			FirewallRef: vn.Spec.FirewallRef, OFPort: ofport, PortSecurity: vn.Spec.PortSecurity == nil || *vn.Spec.PortSecurity,
+		})
 		r.reportBound(ctx, vn, bridge, port, int32(ofport))
 	}
-	return flows
-}
-
-// portSecurityFlows only lets the VNic send frames with its own MAC and IP/ARP identity.
-func portSecurityFlows(ofport int, mac, ip string) []string {
-	return []string{
-		fmt.Sprintf("priority=200,in_port=%d,dl_src=%s,arp,arp_spa=%s,actions=NORMAL", ofport, mac, ip),
-		fmt.Sprintf("priority=200,in_port=%d,dl_src=%s,arp,arp_spa=0.0.0.0,actions=NORMAL", ofport, mac),
-		fmt.Sprintf("priority=200,in_port=%d,dl_src=%s,ip,nw_src=%s,actions=NORMAL", ofport, mac, ip),
-		fmt.Sprintf("priority=190,in_port=%d,actions=drop", ofport),
-	}
+	return bound
 }
 
 func (r *Reconciler) reportBound(ctx context.Context, vn *vpcv1alpha1.VNic, bridge, port string, ofport int32) {

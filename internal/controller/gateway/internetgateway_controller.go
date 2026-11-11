@@ -185,5 +185,3 @@ func (r *InternetGatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("gateway-internetgateway").
 		Complete(r)
 }
-
-

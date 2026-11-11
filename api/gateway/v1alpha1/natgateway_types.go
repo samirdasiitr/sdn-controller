@@ -75,8 +75,36 @@ type NATGatewaySpec struct {
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 }
 
+// EnforcementStatus is reported by each node agent after it programs its OVS
+// pipeline for this object. It is keyed by node name in status.enforcement.
+type EnforcementStatus struct {
+	// observedGeneration is the spec generation the agent compiled and installed.
+	ObservedGeneration int64 `json:"observedGeneration"`
+	// programmed is true when the flows for this generation are installed.
+	Programmed bool `json:"programmed"`
+	// flows is the number of OpenFlow rules installed for this object on the node.
+	// +optional
+	Flows int32 `json:"flows,omitempty"`
+	// matchedPackets is unused for gateways.
+	// +optional
+	MatchedPackets int64 `json:"matchedPackets,omitempty"`
+	// translations is the number of active NAT translations on the node.
+	// +optional
+	Translations int64 `json:"translations,omitempty"`
+	// message carries the error when programming failed.
+	// +optional
+	Message string `json:"message,omitempty"`
+	// warnings are non-fatal limitations (e.g. health checks not implemented).
+	// +optional
+	Warnings []string `json:"warnings,omitempty"`
+}
+
 // NATGatewayStatus defines the observed state of NATGateway.
 type NATGatewayStatus struct {
+	// enforcement is what each node agent actually programmed, keyed by node name.
+	// +optional
+	Enforcement map[string]EnforcementStatus `json:"enforcement,omitempty"`
+
 	// phase is the current lifecycle phase.
 	Phase GatewayPhase `json:"phase,omitempty"`
 

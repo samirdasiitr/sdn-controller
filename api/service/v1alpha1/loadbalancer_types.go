@@ -175,6 +175,10 @@ const (
 
 // LoadBalancerStatus defines the observed state of LoadBalancer.
 type LoadBalancerStatus struct {
+	// enforcement is what each node agent actually programmed, keyed by node name.
+	// +optional
+	Enforcement map[string]EnforcementStatus `json:"enforcement,omitempty"`
+
 	// nodes lists the hosts this resource is running on (Ready nodes matching
 	// nodeSelector that are attached to the VPC).
 	// +optional

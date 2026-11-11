@@ -93,3 +93,28 @@ func All(c client.Client, newList func() client.ObjectList) handler.EventHandler
 		return requests(ctx, c, newList(), "", func(client.Object) bool { return true })
 	})
 }
+
+// Observed is what a node agent reported for one object.
+type Observed struct {
+	Generation int64
+	Programmed bool
+	Message    string
+}
+
+// Evaluate compares the placed nodes with the agents' reports for the current generation.
+// It returns the nodes that are programmed, the nodes still waiting for their agent,
+// and error messages from agents that failed to program this generation.
+func Evaluate(nodes []string, gen int64, obs map[string]Observed) (programmed, waiting, errs []string) {
+	for _, n := range nodes {
+		o, ok := obs[n]
+		switch {
+		case !ok || o.Generation != gen:
+			waiting = append(waiting, n)
+		case o.Programmed:
+			programmed = append(programmed, n)
+		default:
+			errs = append(errs, n+": "+o.Message)
+		}
+	}
+	return
+}

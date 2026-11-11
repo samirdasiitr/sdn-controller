@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -176,12 +178,68 @@ func (c *Client) SetBridgeMTU(ctx context.Context, bridge string, mtu int) error
 	return c.SetInterfaceMTU(ctx, bridge, mtu)
 }
 
-// ReplaceFlows atomically replaces all flows on a bridge with the given set.
+// ReplaceFlows atomically replaces all flows on a bridge (OpenFlow 1.5, single bundle, so
+// groups/conntrack/registers are available and traffic never sees a half-applied pipeline).
 func (c *Client) ReplaceFlows(ctx context.Context, bridge string, flows []string) error {
-	cmd := exec.CommandContext(ctx, c.ovsOfctl, "replace-flows", bridge, "-")
+	cmd := exec.CommandContext(ctx, c.ovsOfctl, "--bundle", "-O", "OpenFlow15", "replace-flows", bridge, "-")
 	cmd.Stdin = strings.NewReader(strings.Join(flows, "\n") + "\n")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("ovs-ofctl replace-flows %s: %w (output: %s)", bridge, err, string(out))
+		return fmt.Errorf("ovs-ofctl replace-flows %s: %w (output: %s)", bridge, err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// OFPort returns the OpenFlow port number of an interface.
+func (c *Client) OFPort(ctx context.Context, iface string) (int, error) {
+	out, err := c.runOutput(ctx, c.ovsVsctl, "get", "interface", iface, "ofport")
+	if err != nil {
+		return 0, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("interface %s has no ofport (%q)", iface, out)
+	}
+	return n, nil
+}
+
+var groupIDRe = regexp.MustCompile(`group_id=(\d+)`)
+
+// SyncGroups creates/updates the given select groups and returns a function that
+// deletes managed groups (id >= minID) that are no longer wanted. Call the returned
+// function after the flows referencing the groups have been replaced.
+func (c *Client) SyncGroups(ctx context.Context, bridge string, want map[int]string, minID int) (prune func() error, err error) {
+	out, _ := c.runOutput(ctx, c.ovsOfctl, "-O", "OpenFlow15", "dump-groups", bridge)
+	have := map[int]bool{}
+	for _, m := range groupIDRe.FindAllStringSubmatch(out, -1) {
+		id, _ := strconv.Atoi(m[1])
+		have[id] = true
+	}
+	for id, def := range want {
+		op := "add-group"
+		if have[id] {
+			op = "mod-group"
+		}
+		if err := c.run(ctx, c.ovsOfctl, "-O", "OpenFlow15", op, bridge, fmt.Sprintf("group_id=%d,%s", id, def)); err != nil {
+			return nil, err
+		}
+	}
+	return func() error {
+		for id := range have {
+			if _, keep := want[id]; !keep && id >= minID {
+				if err := c.run(ctx, c.ovsOfctl, "-O", "OpenFlow15", "del-groups", bridge, fmt.Sprintf("group_id=%d", id)); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}, nil
+}
+
+// ConntrackCount returns the number of tracked connections in a conntrack zone.
+func (c *Client) ConntrackCount(ctx context.Context, zone int) int64 {
+	out, err := c.runOutput(ctx, "ovs-appctl", "dpctl/dump-conntrack", fmt.Sprintf("zone=%d", zone))
+	if err != nil || out == "" {
+		return 0
+	}
+	return int64(len(strings.Split(out, "\n")))
 }

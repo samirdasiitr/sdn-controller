@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -120,23 +121,48 @@ func (r *LoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, nil
 		}
 	}
-	lb.Status.ActiveBackends = int32(len(lb.Spec.Backends))
 	r.setCondition(&lb, "BackendsValid", metav1.ConditionTrue, "Valid",
-		fmt.Sprintf("%d backend(s) validated", lb.Status.ActiveBackends))
+		fmt.Sprintf("%d backend(s) validated", len(lb.Spec.Backends)))
 
-	// Mark Ready
-	if nodes, err := placement.Nodes(ctx, r.Client, lb.Namespace, lb.Spec.VPCRef, lb.Spec.NodeSelector); err != nil {
+	nodes, err := placement.Nodes(ctx, r.Client, lb.Namespace, lb.Spec.VPCRef, lb.Spec.NodeSelector)
+	if err != nil {
 		return ctrl.Result{}, err
-	} else {
-		lb.Status.Nodes = nodes
-		if len(nodes) == 0 {
-			r.setCondition(&lb, "Placed", metav1.ConditionFalse, "NoEligibleNodes", "no Ready node matches nodeSelector and VPC attachment")
-		} else {
-			r.setCondition(&lb, "Placed", metav1.ConditionTrue, "Placed", fmt.Sprintf("running on %v", nodes))
-		}
 	}
-	lb.Status.Phase = servicev1alpha1.LBPhaseReady
-	r.setCondition(&lb, "Ready", metav1.ConditionTrue, "Provisioned", "LoadBalancer is ready")
+	lb.Status.Nodes = nodes
+	if len(nodes) == 0 {
+		r.setCondition(&lb, "Placed", metav1.ConditionFalse, "NoEligibleNodes", "no Ready node matches nodeSelector and VPC attachment")
+	} else {
+		r.setCondition(&lb, "Placed", metav1.ConditionTrue, "Placed", fmt.Sprintf("scheduled on %v", nodes))
+	}
+	obs := map[string]placement.Observed{}
+	var conns int64
+	var warnings []string
+	for n, e := range lb.Status.Enforcement {
+		obs[n] = placement.Observed{Generation: e.ObservedGeneration, Programmed: e.Programmed, Message: e.Message}
+		conns += e.Connections
+		warnings = append(warnings, e.Warnings...)
+	}
+	lb.Status.TotalConnections = conns
+	done, waiting, errs := placement.Evaluate(nodes, lb.Generation, obs)
+	switch {
+	case len(nodes) == 0:
+		lb.Status.Phase, lb.Status.ActiveBackends = servicev1alpha1.LBPhasePending, 0
+		r.setCondition(&lb, "Ready", metav1.ConditionFalse, "NoEligibleNodes", "no node to program")
+	case len(errs) > 0:
+		lb.Status.Phase, lb.Status.ActiveBackends = servicev1alpha1.LBPhaseFailed, 0
+		r.setCondition(&lb, "Ready", metav1.ConditionFalse, "ProgrammingFailed", strings.Join(errs, "; "))
+	case len(waiting) > 0:
+		lb.Status.Phase, lb.Status.ActiveBackends = servicev1alpha1.LBPhaseProvisioning, 0
+		r.setCondition(&lb, "Ready", metav1.ConditionFalse, "WaitingForAgents",
+			fmt.Sprintf("programmed on %d/%d nodes, waiting for %v", len(done), len(nodes), waiting))
+	default:
+		lb.Status.Phase, lb.Status.ActiveBackends = servicev1alpha1.LBPhaseReady, int32(len(lb.Spec.Backends))
+		msg := fmt.Sprintf("VIP %s programmed in OVS on %d node(s)", lb.Spec.Frontend.IP, len(done))
+		if len(warnings) > 0 {
+			msg += " (warnings: " + strings.Join(dedupe(warnings), "; ") + ")"
+		}
+		r.setCondition(&lb, "Ready", metav1.ConditionTrue, "Programmed", msg)
+	}
 
 	if err := r.Status().Update(ctx, &lb); err != nil {
 		return ctrl.Result{}, err

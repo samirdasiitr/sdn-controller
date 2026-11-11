@@ -313,6 +313,52 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              enforcement:
+                additionalProperties:
+                  description: |-
+                    EnforcementStatus is reported by each node agent after it programs its OVS
+                    pipeline for this object. It is keyed by node name in status.enforcement.
+                  properties:
+                    connections:
+                      description: connections is the number of connections currently
+                        tracked on the node (load balancers).
+                      format: int64
+                      type: integer
+                    flows:
+                      description: flows is the number of OpenFlow rules installed
+                        for this object on the node.
+                      format: int32
+                      type: integer
+                    matchedPackets:
+                      description: matchedPackets is the packet count of this object's
+                        rules on the node (firewalls).
+                      format: int64
+                      type: integer
+                    message:
+                      description: message carries the error when programming failed.
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration is the spec generation the agent
+                        compiled and installed.
+                      format: int64
+                      type: integer
+                    programmed:
+                      description: programmed is true when the flows for this generation
+                        are installed.
+                      type: boolean
+                    warnings:
+                      description: warnings are non-fatal limitations (e.g. health
+                        checks not implemented).
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - observedGeneration
+                  - programmed
+                  type: object
+                description: enforcement is what each node agent actually programmed,
+                  keyed by node name.
+                type: object
               nodes:
                 description: |-
                   nodes lists the hosts this resource is running on (Ready nodes matching
