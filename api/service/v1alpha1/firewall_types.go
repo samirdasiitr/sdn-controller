@@ -1,17 +1,9 @@
 /*
-Copyright 2026.
+Copyright (c) 2026 Samir Das. All rights reserved.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+PROPRIETARY AND CONFIDENTIAL. No license is granted. Any use of this software, and in
+particular production or commercial use, requires the prior explicit written permission of
+Samir Das <samiruor@gmail.com>. See the LICENSE file.
 */
 
 package v1alpha1
@@ -53,6 +45,15 @@ type FirewallRuleMatch struct {
 	// dstCIDR is the destination network to match.
 	// +optional
 	DstCIDR string `json:"dstCIDR,omitempty"`
+
+	// srcSubnetRef matches traffic from a Subnet of the VPC by name (compiled to its CIDR, which
+	// OVS matches natively as a masked prefix). Mutually exclusive with srcCIDR.
+	// +optional
+	SrcSubnetRef string `json:"srcSubnetRef,omitempty"`
+
+	// dstSubnetRef matches traffic to a Subnet of the VPC by name. Mutually exclusive with dstCIDR.
+	// +optional
+	DstSubnetRef string `json:"dstSubnetRef,omitempty"`
 
 	// srcPort is the source port or range (e.g., "80" or "1024-65535").
 	// +optional

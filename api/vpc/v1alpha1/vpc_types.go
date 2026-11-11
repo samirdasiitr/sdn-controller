@@ -1,17 +1,9 @@
 /*
-Copyright 2026.
+Copyright (c) 2026 Samir Das. All rights reserved.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+PROPRIETARY AND CONFIDENTIAL. No license is granted. Any use of this software, and in
+particular production or commercial use, requires the prior explicit written permission of
+Samir Das <samiruor@gmail.com>. See the LICENSE file.
 */
 
 package v1alpha1
@@ -28,6 +20,15 @@ const (
 	TunnelTypeVXLAN TunnelType = "VXLAN"
 	TunnelTypeIPIP  TunnelType = "IPIP"
 	TunnelTypeGRE   TunnelType = "GRE"
+)
+
+// InterSubnetPolicy is the default for traffic between two different subnets of a VPC.
+// +kubebuilder:validation:Enum=Deny;Allow
+type InterSubnetPolicy string
+
+const (
+	InterSubnetDeny  InterSubnetPolicy = "Deny"
+	InterSubnetAllow InterSubnetPolicy = "Allow"
 )
 
 // VPCSpec defines the desired state of VPC.
@@ -53,6 +54,15 @@ type VPCSpec struct {
 	// +kubebuilder:default=VXLAN
 	// +optional
 	TunnelType TunnelType `json:"tunnelType,omitempty"`
+
+	// interSubnetPolicy is the default for traffic between different subnets of this VPC.
+	// Deny (default) blocks it unless a Firewall rule allows it (rules can name subnets with
+	// srcSubnetRef/dstSubnetRef); traffic inside one subnet and to/from outside the VPC is not
+	// affected. It is enforced at the destination VNic with connection tracking, so replies to
+	// allowed connections pass automatically.
+	// +kubebuilder:default=Deny
+	// +optional
+	InterSubnetPolicy InterSubnetPolicy `json:"interSubnetPolicy,omitempty"`
 
 	// mtu is the Maximum Transmission Unit for this VPC.
 	// +kubebuilder:validation:Minimum=1280
@@ -155,6 +165,7 @@ type VPCStatus struct {
 // +kubebuilder:printcolumn:name="CIDR",type=string,JSONPath=`.spec.cidr`
 // +kubebuilder:printcolumn:name="Tunnel",type=string,JSONPath=`.spec.tunnelType`
 // +kubebuilder:printcolumn:name="VNI",type=integer,JSONPath=`.status.allocatedVNI`
+// +kubebuilder:printcolumn:name="Inter-subnet",type=string,JSONPath=`.spec.interSubnetPolicy`
 // +kubebuilder:printcolumn:name="MTU",type=integer,JSONPath=`.spec.mtu`
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

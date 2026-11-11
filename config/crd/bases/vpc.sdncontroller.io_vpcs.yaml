@@ -26,6 +26,9 @@ spec:
     - jsonPath: .status.allocatedVNI
       name: VNI
       type: integer
+    - jsonPath: .spec.interSubnetPolicy
+      name: Inter-subnet
+      type: string
     - jsonPath: .spec.mtu
       name: MTU
       type: integer
@@ -71,6 +74,18 @@ spec:
                 description: enableDNS enables internal DNS resolution within the
                   VPC.
                 type: boolean
+              interSubnetPolicy:
+                default: Deny
+                description: |-
+                  interSubnetPolicy is the default for traffic between different subnets of this VPC.
+                  Deny (default) blocks it unless a Firewall rule allows it (rules can name subnets with
+                  srcSubnetRef/dstSubnetRef); traffic inside one subnet and to/from outside the VPC is not
+                  affected. It is enforced at the destination VNic with connection tracking, so replies to
+                  allowed connections pass automatically.
+                enum:
+                - Deny
+                - Allow
+                type: string
               mtu:
                 default: 1500
                 description: mtu is the Maximum Transmission Unit for this VPC.

@@ -1,0 +1,48 @@
+SDN Controller - Proprietary License
+
+Copyright (c) 2026 Samir Das. All rights reserved.
+
+This software and all associated source code, documentation, configuration, container
+images, scripts, designs and other materials (together, the "Software") are the exclusive
+property of Samir Das ("Owner"). The Software is proprietary and confidential.
+
+1. NO LICENSE GRANTED
+   No license, right or permission of any kind is granted to any person or entity, whether
+   express, implied, by estoppel or otherwise, except as the Owner grants in a separate
+   written agreement or written permission signed by or sent from the Owner.
+
+2. PERMISSION REQUIRED
+   Any use of the Software requires the prior, explicit, written permission of the Owner.
+   This includes, without limitation, running, deploying, copying, modifying, translating,
+   compiling, linking, distributing, sublicensing, publishing, hosting, or creating derivative
+   works of the Software, in whole or in part.
+
+3. NO PRODUCTION OR COMMERCIAL USE
+   Unless the Owner has granted explicit written permission that expressly covers it, the
+   Software must not be used (a) in any production environment or for any production
+   workload, or (b) for any commercial purpose, including offering it, or a service built on
+   it, to third parties, or using it to generate revenue or in the course of business.
+
+4. NO OTHER RIGHTS
+   Access to the Software, including access to a source repository, does not grant any right
+   to use it. Viewing the Software does not give any right to reproduce or use its contents,
+   ideas, designs or methods.
+
+5. THIRD-PARTY COMPONENTS
+   The Software depends on third-party open-source components (for example Kubernetes,
+   controller-runtime, Open vSwitch and React). Those components remain under their own
+   licenses, which are not changed by this license, and nothing here restricts rights you
+   already have in them.
+
+6. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+   INCLUDING THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE AND
+   NON-INFRINGEMENT. THE OWNER IS NOT LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+   FROM OR IN CONNECTION WITH THE SOFTWARE OR ITS USE, INCLUDING DATA LOSS OR NETWORK OUTAGES.
+
+7. TERMINATION
+   Any permission granted by the Owner may be limited, revoked or made conditional by the
+   Owner in writing. On revocation, or if these terms are violated, all use must stop and all
+   copies of the Software must be deleted.
+
+To request permission, contact: Samir Das <samiruor@gmail.com>

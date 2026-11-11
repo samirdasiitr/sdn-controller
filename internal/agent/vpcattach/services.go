@@ -44,7 +44,7 @@ func (r *Reconciler) programPipeline(ctx context.Context, v *vpcv1alpha1.VPC, br
 		}
 	}
 
-	in := pipeline.Input{VNI: int(v.Status.AllocatedVNI), VPCCIDRs: append([]string{v.Spec.CIDR}, v.Spec.SecondaryCIDRs...),
+	in := pipeline.Input{VNI: int(v.Status.AllocatedVNI), InterSubnetDeny: v.Spec.InterSubnetPolicy != vpcv1alpha1.InterSubnetAllow, VPCCIDRs: append([]string{v.Spec.CIDR}, v.Spec.SecondaryCIDRs...),
 		Subnets: map[string]string{}, IPToMAC: map[string]string{}, Ports: bound}
 	for _, sn := range subnets.Items {
 		if sn.Spec.VPCRef == v.Name {

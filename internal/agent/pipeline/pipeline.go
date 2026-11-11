@@ -52,13 +52,16 @@ type Port struct {
 type Input struct {
 	// VNI selects conntrack zone ranges. Zones are global to the kernel datapath, so
 	// VPCs (which may use overlapping CIDRs) must not share them.
-	VNI         int
-	VPCCIDRs    []string
-	Subnets     map[string]string // subnet name -> CIDR
-	Routes      []string
-	Ports       []Port
-	TunnelPorts []int
-	IPToMAC     map[string]string // every VNic in the VPC
+	VNI      int
+	VPCCIDRs []string
+	// InterSubnetDeny blocks traffic between different subnets of the VPC unless a Firewall rule
+	// allows it (VPC spec.interSubnetPolicy, default Deny).
+	InterSubnetDeny bool
+	Subnets         map[string]string // subnet name -> CIDR
+	Routes          []string
+	Ports           []Port
+	TunnelPorts     []int
+	IPToMAC         map[string]string // every VNic in the VPC
 	// RemoteMACs maps the MAC of a VNic hosted on another node to the local tunnel port
 	// leading there. Needed for hairpins: traffic that arrives from a tunnel and must leave
 	// through the same tunnel (e.g. client and backend on the same remote node) is dropped
@@ -199,9 +202,11 @@ func (b *builder) portSecurity() {
 
 type policy struct {
 	id       int
-	fws      []servicev1alpha1.Firewall
+	fws      []servicev1alpha1.Firewall // empty: implicit policy that only enforces inter-subnet isolation
 	stateful bool
-	deny     bool // default action
+	deny     bool   // default action of the attached firewalls (false for implicit policies)
+	isolate  bool   // apply the VPC inter-subnet default on top
+	own      string // CIDR of the subnet the policy's VNics live in (when isolating)
 }
 
 func contains(l []string, s string) bool {
@@ -224,7 +229,8 @@ func (b *builder) firewalls() {
 				fws = append(fws, fw)
 			}
 		}
-		if len(fws) == 0 {
+		isolate := b.in.InterSubnetDeny
+		if len(fws) == 0 && !isolate {
 			continue
 		}
 		sort.Slice(fws, func(i, j int) bool { return fws[i].Namespace+"/"+fws[i].Name < fws[j].Namespace+"/"+fws[j].Name })
@@ -233,9 +239,12 @@ func (b *builder) firewalls() {
 			names[i] = f.Namespace + "/" + f.Name
 		}
 		key := strings.Join(names, ",")
+		if isolate {
+			key += "|" + p.Subnet // the own-subnet exception differs per subnet
+		}
 		pol := byKey[key]
 		if pol == nil {
-			pol = &policy{fws: fws}
+			pol = &policy{fws: fws, isolate: isolate, own: b.in.Subnets[p.Subnet], stateful: len(fws) == 0}
 			for _, f := range fws {
 				pol.stateful = pol.stateful || f.Spec.Stateful
 				pol.deny = pol.deny || f.Spec.DefaultAction != servicev1alpha1.FirewallActionAllow
@@ -297,7 +306,7 @@ func (b *builder) policyFlows(pol *policy) {
 				if r.Direction != tbl.dir {
 					continue
 				}
-				matches, err := ruleMatches(r.Match)
+				matches, err := ruleMatches(r.Match, b.in.Subnets)
 				if err != nil {
 					if tbl.dir == servicev1alpha1.FirewallDirectionEgress {
 						rep.Warnings = append(rep.Warnings, fmt.Sprintf("rule %q skipped: %v", r.Name, err))
@@ -309,6 +318,9 @@ func (b *builder) policyFlows(pol *policy) {
 				}
 				allow := r.Action != servicev1alpha1.FirewallActionDeny
 				prio := 65536 - int(r.Priority)
+				if prio < 4 {
+					prio = 4 // keep the inter-subnet default flows (2,3) below every rule
+				}
 				ck := b.newCookie(CookieRef{"Firewall", fw.Namespace, fw.Name, r.Name, string(r.Action)})
 				for _, m := range matches {
 					ct := ""
@@ -317,6 +329,22 @@ func (b *builder) policyFlows(pol *policy) {
 					}
 					b.add("cookie=0x%x,table=%d,priority=%d,%sreg1=%d,%s,actions=%s", ck, tbl.table, prio, ct, pol.id, m, b.verdict(pol, allow, tbl.next))
 					rep.Flows++
+				}
+			}
+		}
+		if pol.isolate && tbl.dir == servicev1alpha1.FirewallDirectionIngress {
+			// Inter-subnet default: the own subnet gets the policy's default verdict, any other source
+			// inside the VPC is dropped, everything else (outside the VPC) falls through to the default.
+			ct := ""
+			if pol.stateful {
+				ct = "ct_state=+trk+new,"
+			}
+			if pol.own != "" {
+				b.add("table=%d,priority=3,%sreg1=%d,ip,nw_src=%s,actions=%s", tbl.table, ct, pol.id, pol.own, b.verdict(pol, !pol.deny, tbl.next))
+			}
+			if !pol.deny {
+				for _, c := range b.in.VPCCIDRs {
+					b.add("table=%d,priority=2,%sreg1=%d,ip,nw_src=%s,actions=drop", tbl.table, ct, pol.id, c)
 				}
 			}
 		}
@@ -337,7 +365,25 @@ func (b *builder) verdict(pol *policy, allow bool, next int) string {
 func isV4CIDR(c string) bool { return strings.Contains(c, ".") && !strings.Contains(c, ":") }
 
 // ruleMatches converts a rule match into one or more OpenFlow match strings (port ranges expand to masks).
-func ruleMatches(m servicev1alpha1.FirewallRuleMatch) ([]string, error) {
+func ruleMatches(m servicev1alpha1.FirewallRuleMatch, subnets map[string]string) ([]string, error) {
+	// Subnet references compile to the subnet's CIDR: a masked prefix that OVS matches natively.
+	for _, c := range []struct {
+		ref  string
+		cidr *string
+		what string
+	}{{m.SrcSubnetRef, &m.SrcCIDR, "src"}, {m.DstSubnetRef, &m.DstCIDR, "dst"}} {
+		if c.ref == "" {
+			continue
+		}
+		if *c.cidr != "" {
+			return nil, fmt.Errorf("%sSubnetRef and %sCIDR are mutually exclusive", c.what, c.what)
+		}
+		cidr, ok := subnets[c.ref]
+		if !ok {
+			return nil, fmt.Errorf("%sSubnetRef %q is not a subnet of this VPC", c.what, c.ref)
+		}
+		*c.cidr = cidr
+	}
 	proto := strings.ToLower(m.Protocol)
 	var base []string
 	switch proto {

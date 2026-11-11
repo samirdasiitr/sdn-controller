@@ -254,3 +254,60 @@ func TestNATDNATNeedsForwards(t *testing.T) {
 		t.Error("DNAT without portForwards must report an error")
 	}
 }
+
+func isolatedInput() Input {
+	in := testInput()
+	in.Firewalls, in.LBs, in.NATs = nil, nil, nil
+	in.InterSubnetDeny = true
+	return in
+}
+
+func TestInterSubnetIsolationWithoutFirewall(t *testing.T) {
+	o := Build(isolatedInput())
+	// both VNics get an implicit stateful policy even though no Firewall applies
+	has(t, o.Flows, "table=25,priority=100,ip,nw_dst=10.0.1.10,actions=load:2->NXM_NX_REG0[0..15]")
+	has(t, o.Flows, "table=25,priority=100,ip,nw_dst=10.0.2.10,actions=load:3->NXM_NX_REG0[0..15],load:1->NXM_NX_REG1[]")
+	// own subnet allowed, rest of the VPC dropped, outside the VPC allowed by the default
+	has(t, o.Flows, "table=30,priority=3,ct_state=+trk+new,reg1=2,ip,nw_src=10.0.1.0/24,actions=ct(commit")
+	has(t, o.Flows, "table=30,priority=3,ct_state=+trk+new,reg1=1,ip,nw_src=10.0.2.0/24,actions=ct(commit")
+	has(t, o.Flows, "table=30,priority=2,ct_state=+trk+new,reg1=2,ip,nw_src=10.0.0.0/16,actions=drop")
+	has(t, o.Flows, "table=30,priority=2,ct_state=+trk+new,reg1=1,ip,nw_src=10.0.0.0/16,actions=drop")
+	has(t, o.Flows, "table=30,priority=0,reg1=1,actions=ct(commit")
+	// replies of connections the VNic started stay allowed
+	has(t, o.Flows, "table=30,priority=100,ct_state=+trk+est,reg1=1")
+	// egress is not restricted
+	has(t, o.Flows, "table=10,priority=0,reg1=1,actions=ct(commit")
+}
+
+func TestInterSubnetAllowDisablesIsolation(t *testing.T) {
+	in := isolatedInput()
+	in.InterSubnetDeny = false
+	o := Build(in)
+	hasNot(t, o.Flows, "priority=2,ct_state=+trk+new,reg1=")
+	hasNot(t, o.Flows, "table=25,priority=100,ip,nw_dst=10.0.1.10")
+}
+
+func TestFirewallSubnetRefRules(t *testing.T) {
+	in := isolatedInput()
+	in.Subnets = map[string]string{"web": "10.0.1.0/24", "app": "10.0.2.0/24"}
+	in.Firewalls = []servicev1alpha1.Firewall{{
+		ObjectMeta: metav1.ObjectMeta{Name: "db-fw", Namespace: "d"},
+		Spec: servicev1alpha1.FirewallSpec{
+			DefaultAction: servicev1alpha1.FirewallActionDeny, Stateful: true, SubnetRefs: []string{"web"},
+			Rules: []servicev1alpha1.FirewallRule{
+				{Name: "pg", Priority: 100, Direction: servicev1alpha1.FirewallDirectionIngress, Action: servicev1alpha1.FirewallActionAllow,
+					Match: servicev1alpha1.FirewallRuleMatch{Protocol: "TCP", SrcSubnetRef: "app", DstPort: "5432"}},
+				{Name: "bad-ref", Priority: 110, Direction: servicev1alpha1.FirewallDirectionEgress, Action: servicev1alpha1.FirewallActionAllow,
+					Match: servicev1alpha1.FirewallRuleMatch{Protocol: "TCP", DstSubnetRef: "nope"}},
+				{Name: "both", Priority: 120, Direction: servicev1alpha1.FirewallDirectionEgress, Action: servicev1alpha1.FirewallActionAllow,
+					Match: servicev1alpha1.FirewallRuleMatch{Protocol: "TCP", DstSubnetRef: "app", DstCIDR: "1.2.3.0/24"}},
+			},
+		},
+	}}
+	o := Build(in)
+	has(t, o.Flows, "table=30,priority=65436,ct_state=+trk+new,reg1=1,tcp,nw_src=10.0.2.0/24,tp_dst=0x1538,actions=ct(commit")
+	w := strings.Join(o.Reports["Firewall/d/db-fw"].Warnings, ";")
+	if !strings.Contains(w, `dstSubnetRef "nope" is not a subnet`) || !strings.Contains(w, "mutually exclusive") {
+		t.Errorf("invalid subnet refs must be reported: %s", w)
+	}
+}

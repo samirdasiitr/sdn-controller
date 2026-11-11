@@ -144,6 +144,10 @@ spec:
                         dstPort:
                           description: dstPort is the destination port or range.
                           type: string
+                        dstSubnetRef:
+                          description: dstSubnetRef matches traffic to a Subnet of
+                            the VPC by name. Mutually exclusive with dstCIDR.
+                          type: string
                         protocol:
                           description: protocol is the L4 protocol to match.
                           enum:
@@ -159,6 +163,11 @@ spec:
                         srcPort:
                           description: srcPort is the source port or range (e.g.,
                             "80" or "1024-65535").
+                          type: string
+                        srcSubnetRef:
+                          description: |-
+                            srcSubnetRef matches traffic from a Subnet of the VPC by name (compiled to its CIDR, which
+                            OVS matches natively as a masked prefix). Mutually exclusive with srcCIDR.
                           type: string
                       type: object
                     name:
