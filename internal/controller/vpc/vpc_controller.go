@@ -154,7 +154,7 @@ func (r *VPCReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	log.Info("VPC reconciled", "vpc", vpc.Name, "vni", vni, "cidr", vpc.Spec.CIDR)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *VPCReconciler) reconcileDelete(ctx context.Context, vpc *vpcv1alpha1.VPC) (ctrl.Result, error) {

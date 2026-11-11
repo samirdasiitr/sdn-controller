@@ -144,7 +144,7 @@ func (r *NetworkInterfaceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	log.Info("NetworkInterface reconciled", "nic", nic.Name, "node", nic.Spec.NodeName, "device", nic.Spec.Device)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *NetworkInterfaceReconciler) reconcileDelete(ctx context.Context, nic *infrav1alpha1.NetworkInterface) (ctrl.Result, error) {

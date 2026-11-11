@@ -159,7 +159,7 @@ func (r *NodeNetworkConfigReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	log.Info("NodeNetworkConfig reconciled", "nnc", nnc.Name, "node", nnc.Spec.NodeName,
 		"tunnels", tunnelCount, "offload", nnc.Status.OffloadStatus)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *NodeNetworkConfigReconciler) reconcileDelete(ctx context.Context, nnc *infrav1alpha1.NodeNetworkConfig) (ctrl.Result, error) {

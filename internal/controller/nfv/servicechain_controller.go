@@ -126,7 +126,7 @@ func (r *ServiceChainReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	log.Info("ServiceChain reconciled", "sc", sc.Name, "vpc", sc.Spec.VPCRef, "chainLength", sc.Status.ChainLength)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *ServiceChainReconciler) reconcileDelete(ctx context.Context, sc *nfvv1alpha1.ServiceChain) (ctrl.Result, error) {

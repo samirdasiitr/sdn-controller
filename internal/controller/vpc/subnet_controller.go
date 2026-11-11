@@ -157,7 +157,7 @@ func (r *SubnetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	log.Info("Subnet reconciled", "subnet", subnet.Name, "vpc", subnet.Spec.VPCRef, "cidr", subnet.Spec.CIDR)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *SubnetReconciler) reconcileDelete(ctx context.Context, subnet *vpcv1alpha1.Subnet) (ctrl.Result, error) {

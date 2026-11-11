@@ -150,7 +150,7 @@ func (r *BondReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	log.Info("Bond reconciled", "bond", bond.Name, "node", bond.Spec.NodeName, "mode", bond.Spec.Mode, "interfaces", activeCount)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *BondReconciler) reconcileDelete(ctx context.Context, bond *infrav1alpha1.Bond) (ctrl.Result, error) {

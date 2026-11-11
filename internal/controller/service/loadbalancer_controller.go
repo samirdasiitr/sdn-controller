@@ -132,7 +132,7 @@ func (r *LoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	log.Info("LoadBalancer reconciled", "lb", lb.Name, "vpc", lb.Spec.VPCRef, "vip", lb.Spec.Frontend.IP, "backends", lb.Status.ActiveBackends)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *LoadBalancerReconciler) reconcileDelete(ctx context.Context, lb *servicev1alpha1.LoadBalancer) (ctrl.Result, error) {

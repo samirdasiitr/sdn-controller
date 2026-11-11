@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -46,6 +47,7 @@ import (
 	servicecontroller "github.com/sdncontroller/sdncontroller/internal/controller/service"
 	vpccontroller "github.com/sdncontroller/sdncontroller/internal/controller/vpc"
 	"github.com/sdncontroller/sdncontroller/internal/ipam"
+	"github.com/sdncontroller/sdncontroller/internal/telemetry"
 	"github.com/sdncontroller/sdncontroller/pkg/netutil"
 	// +kubebuilder:scaffold:imports
 )
@@ -283,6 +285,13 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	// Start metrics collector (scrapes CRD state every 15s)
+	metricsCollector := telemetry.NewMetricsCollector(mgr.GetClient(), 15*time.Second)
+	if err := mgr.Add(metricsCollector); err != nil {
+		setupLog.Error(err, "unable to add metrics collector")
+		os.Exit(1)
+	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

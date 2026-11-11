@@ -131,7 +131,7 @@ func (r *FirewallReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	log.Info("Firewall reconciled", "fw", fw.Name, "vpc", fw.Spec.VPCRef, "rules", fw.Status.ActiveRules)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *FirewallReconciler) reconcileDelete(ctx context.Context, fw *servicev1alpha1.Firewall) (ctrl.Result, error) {

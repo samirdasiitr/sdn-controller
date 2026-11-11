@@ -138,7 +138,7 @@ func (r *InternetGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	log.Info("InternetGateway reconciled", "igw", igw.Name, "vpc", igw.Spec.VPCRef, "activeNode", igw.Status.ActiveNode)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *InternetGatewayReconciler) reconcileDelete(ctx context.Context, igw *gatewayv1alpha1.InternetGateway) (ctrl.Result, error) {

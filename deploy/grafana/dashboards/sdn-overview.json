@@ -1,808 +1,298 @@
 {
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
-  },
+  "annotations": { "list": [] },
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
   "links": [],
   "panels": [
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 100, "title": "Resource Inventory", "type": "row" },
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-      "id": 100,
-      "title": "Controller Overview",
-      "type": "row"
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 1 }, "id": 1,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_node_total", "legendFormat": "Nodes", "refId": "A" }],
+      "title": "Nodes", "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
-      "id": 1,
-      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(controller_runtime_reconcile_total{controller=\"vpc-vpc\", result=\"success\"})",
-          "legendFormat": "VPC Reconciles",
-          "refId": "A"
-        }
-      ],
-      "title": "VPC Reconciles (success)",
-      "type": "stat"
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 1 }, "id": 2,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_vpc_total", "legendFormat": "VPCs", "refId": "A" }],
+      "title": "VPCs", "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
-      "id": 2,
-      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(controller_runtime_reconcile_total{controller=\"vpc-subnet\", result=\"success\"})",
-          "legendFormat": "Subnet Reconciles",
-          "refId": "A"
-        }
-      ],
-      "title": "Subnet Reconciles (success)",
-      "type": "stat"
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "purple", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 1 }, "id": 3,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_subnet_total", "legendFormat": "Subnets", "refId": "A" }],
+      "title": "Subnets", "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
-      "id": 3,
-      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(controller_runtime_active_workers) by (controller)",
-          "legendFormat": "{{ controller }}",
-          "refId": "A"
-        }
-      ],
-      "title": "Active Workers",
-      "type": "stat"
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "orange", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 1 }, "id": 4,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_internetgateway_total", "legendFormat": "IGWs", "refId": "A" }],
+      "title": "Internet GWs", "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
-          "unit": "short"
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
-      "id": 4,
-      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(controller_runtime_reconcile_total{result=\"error\"})",
-          "legendFormat": "Errors",
-          "refId": "A"
-        }
-      ],
-      "title": "Total Reconcile Errors",
-      "type": "stat"
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "orange", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 1 }, "id": 5,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_natgateway_total", "legendFormat": "NAT GWs", "refId": "A" }],
+      "title": "NAT GWs", "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
-        }
-      },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
-      "id": 5,
-      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(workqueue_depth)",
-          "legendFormat": "Queue Depth",
-          "refId": "A"
-        }
-      ],
-      "title": "Total Queue Depth",
-      "type": "stat"
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "semi-dark-yellow", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 1 }, "id": 6,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_loadbalancer_total", "legendFormat": "LBs", "refId": "A" }],
+      "title": "Load Balancers", "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "red", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 1 }, "id": 7,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_firewall_total", "legendFormat": "Firewalls", "refId": "A" }],
+      "title": "Firewalls", "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "dark-green", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 1 }, "id": 8,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{ "expr": "sdn_tunnel_total", "legendFormat": "Tunnels", "refId": "A" }],
+      "title": "Tunnels", "type": "stat"
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "id": 101, "title": "VPC & Subnet Details", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "s"
-        }
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto", "inspect": false }, "mappings": [], "thresholds": { "steps": [{ "color": "green", "value": null }] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "VNI" }] },
+          { "matcher": { "id": "byName", "options": "phase" }, "properties": [{ "id": "custom.displayMode", "value": "color-text" }, { "id": "mappings", "value": [{ "options": { "Ready": { "color": "green", "index": 0, "text": "Ready" }, "Failed": { "color": "red", "index": 1 }, "Provisioning": { "color": "yellow", "index": 2 } }, "type": "value" }] }] }
+        ]
       },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
-      "id": 6,
-      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "process_start_time_seconds{job=\"sdn-controller\"}",
-          "legendFormat": "Start Time",
-          "refId": "A"
-        }
-      ],
-      "title": "Controller Uptime",
-      "type": "stat",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 }, "id": 10,
+      "options": { "showHeader": true, "sortBy": [{ "desc": false, "displayName": "name" }] },
+      "targets": [{ "expr": "sdn_vpc_info", "format": "table", "instant": true, "refId": "A" }],
+      "title": "VPCs", "type": "table",
       "transformations": [
-        {
-          "id": "calculateField",
-          "options": { "alias": "uptime", "mode": "reduceRow", "reduce": { "reducer": "lastNotNull" } }
-        }
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["name", "namespace", "cidr", "mtu", "phase", "Value"] } } }
       ]
     },
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
-      "id": 101,
-      "title": "Reconcile Rates",
-      "type": "row"
-    },
-    {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "reconciles/sec",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "ops"
-        }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
-      "id": 10,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (controller) (rate(controller_runtime_reconcile_total{result=\"success\"}[2m]))",
-          "legendFormat": "{{ controller }}",
-          "refId": "A"
-        }
-      ],
-      "title": "Reconcile Rate by Controller (success)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "reconciles/sec",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "ops"
-        },
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } },
         "overrides": [
-          {
-            "matcher": { "id": "byRegexp", "options": ".*error.*" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
-          }
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Available IPs" }] },
+          { "matcher": { "id": "byName", "options": "phase" }, "properties": [{ "id": "custom.displayMode", "value": "color-text" }, { "id": "mappings", "value": [{ "options": { "Ready": { "color": "green", "index": 0 }, "Failed": { "color": "red", "index": 1 } }, "type": "value" }] }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
-      "id": 11,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (controller) (rate(controller_runtime_reconcile_total{result=\"error\"}[2m]))",
-          "legendFormat": "{{ controller }} (error)",
-          "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (controller) (rate(controller_runtime_reconcile_total{result=\"requeue\"}[2m]))",
-          "legendFormat": "{{ controller }} (requeue)",
-          "refId": "B"
-        }
-      ],
-      "title": "Reconcile Errors & Requeues",
-      "type": "timeseries"
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 }, "id": 11,
+      "options": { "showHeader": true, "sortBy": [{ "desc": false, "displayName": "vpc" }] },
+      "targets": [{ "expr": "sdn_subnet_info", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Subnets", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["name", "namespace", "vpc", "cidr", "gateway", "type", "phase", "Value"] } } }
+      ]
     },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
-      "id": 102,
-      "title": "Reconcile Latency",
-      "type": "row"
-    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 12 }, "id": 102, "title": "Services & Policies", "type": "row" },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "seconds",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "s"
-        }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
-      "id": 20,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.99, sum by (controller, le) (rate(controller_runtime_reconcile_time_seconds_bucket[2m])))",
-          "legendFormat": "{{ controller }} p99",
-          "refId": "A"
-        }
-      ],
-      "title": "Reconcile Latency p99 by Controller",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "seconds",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "s"
-        }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
-      "id": 21,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.50, sum by (controller, le) (rate(controller_runtime_reconcile_time_seconds_bucket[2m])))",
-          "legendFormat": "{{ controller }} p50",
-          "refId": "A"
-        }
-      ],
-      "title": "Reconcile Latency p50 by Controller",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
-      "id": 103,
-      "title": "Work Queues",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "items",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "normal" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 24 },
-      "id": 30,
-      "options": {
-        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "workqueue_depth",
-          "legendFormat": "{{ controller }}",
-          "refId": "A"
-        }
-      ],
-      "title": "Queue Depth by Controller",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "adds/sec",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "ops"
-        }
-      },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 24 },
-      "id": 31,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (controller) (rate(workqueue_adds_total[2m]))",
-          "legendFormat": "{{ controller }}",
-          "refId": "A"
-        }
-      ],
-      "title": "Queue Adds Rate",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "seconds",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "s"
-        }
-      },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 24 },
-      "id": 32,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.99, sum by (name, le) (rate(workqueue_queue_duration_seconds_bucket[2m])))",
-          "legendFormat": "{{ name }} p99",
-          "refId": "A"
-        }
-      ],
-      "title": "Queue Wait Time p99",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
-      "id": 104,
-      "title": "Per-Controller Reconcile Totals",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "scaleDistribution": { "type": "linear" },
-            "showValue": "auto",
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "short"
-        },
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } },
         "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "error" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "success" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "requeue" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }]
-          }
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Rules" }, { "id": "custom.displayMode", "value": "color-background" }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "transparent", "value": null }, { "color": "light-red", "value": 5 }] } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
-      "id": 40,
-      "options": {
-        "barRadius": 0.05,
-        "barWidth": 0.7,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
-        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "orientation": "horizontal",
-        "showValue": "auto",
-        "stacking": "normal",
-        "tooltip": { "mode": "multi", "sort": "desc" },
-        "xTickLabelRotation": 0
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 13 }, "id": 20,
+      "options": { "showHeader": true },
+      "targets": [{ "expr": "sdn_firewall_rules", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Firewall Rules", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["name", "namespace", "vpc", "default_action", "Value"] } } }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Backends" }] }
+        ]
       },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 13 }, "id": 21,
+      "options": { "showHeader": true },
+      "targets": [{ "expr": "sdn_loadbalancer_backends", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Load Balancer Backends", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["name", "namespace", "vpc", "vip", "algorithm", "Value"] } } }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "phase" }, "properties": [{ "id": "custom.displayMode", "value": "color-text" }, { "id": "mappings", "value": [{ "options": { "Ready": { "color": "green", "index": 0 }, "Failed": { "color": "red", "index": 1 } }, "type": "value" }] }] },
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Status" }, { "id": "mappings", "value": [{ "options": { "0": { "text": "Not Ready" }, "1": { "text": "Ready" } }, "type": "value" }] }] }
+        ]
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 18 }, "id": 22,
+      "options": { "showHeader": true },
+      "targets": [{ "expr": "sdn_gateway_info", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Gateways", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["name", "namespace", "vpc", "kind", "active_node", "phase"] } } }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Established" }, { "id": "mappings", "value": [{ "options": { "0": { "color": "red", "text": "Down" }, "1": { "color": "green", "text": "Up" } }, "type": "value" }] }, { "id": "custom.displayMode", "value": "color-text" }] }
+        ]
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 18 }, "id": 23,
+      "options": { "showHeader": true },
+      "targets": [{ "expr": "sdn_tunnel_info", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Tunnels", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["name", "namespace", "type", "local_node", "remote_node", "phase", "Value"] } } }
+      ]
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }, "id": 103, "title": "NFV", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Ready Replicas" }] },
+          { "matcher": { "id": "byName", "options": "phase" }, "properties": [{ "id": "custom.displayMode", "value": "color-text" }, { "id": "mappings", "value": [{ "options": { "Running": { "color": "green", "index": 0 }, "Failed": { "color": "red", "index": 1 } }, "type": "value" }] }] }
+        ]
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 24 }, "id": 30,
+      "options": { "showHeader": true },
+      "targets": [{ "expr": "sdn_vnf_replicas", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Virtual Network Functions", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["name", "namespace", "type", "phase", "Value"] } } }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Hops" }] },
+          { "matcher": { "id": "byName", "options": "phase" }, "properties": [{ "id": "custom.displayMode", "value": "color-text" }, { "id": "mappings", "value": [{ "options": { "Active": { "color": "green", "index": 0 }, "Failed": { "color": "red", "index": 1 } }, "type": "value" }] }] }
+        ]
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 24 }, "id": 31,
+      "options": { "showHeader": true },
+      "targets": [{ "expr": "sdn_servicechain_hops", "format": "table", "instant": true, "refId": "A" }],
+      "title": "Service Chains", "type": "table",
+      "transformations": [
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["name", "namespace", "vpc", "direction", "phase", "Value"] } } }
+      ]
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 }, "id": 104, "title": "Network Topology", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 30 }, "id": 40,
+      "options": { "nodes": { "mainStatUnit": "" }, "edges": {} },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (controller, result) (controller_runtime_reconcile_total)",
+          "expr": "sdn_topology_edge",
           "format": "table",
           "instant": true,
-          "legendFormat": "__auto",
           "refId": "A"
         }
       ],
-      "title": "Reconcile Totals by Controller & Result",
-      "type": "barchart",
+      "title": "Network Topology (Node Graph)",
+      "type": "nodeGraph",
       "transformations": [
         {
-          "id": "groupBy",
-          "options": {
-            "fields": {
-              "controller": { "aggregations": [], "operation": "groupby" },
-              "result": { "aggregations": [], "operation": "groupby" },
-              "Value": { "aggregations": ["sum"], "operation": "aggregate" }
-            }
-          }
-        },
-        {
-          "id": "rowsToFields",
-          "options": { "mappings": [{ "fieldName": "result", "handlerKey": "field.name" }, { "fieldName": "Value (sum)", "handlerKey": "field.value" }] }
+          "id": "renameByRegex",
+          "options": { "regex": "source_id", "renamePattern": "id" }
         }
       ]
     },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
-      "id": 105,
-      "title": "Process / Runtime",
-      "type": "row"
-    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 42 }, "id": 105, "title": "Controller Reconcile Rates", "type": "row" },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "bytes"
-        }
-      },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 41 },
-      "id": 50,
-      "options": {
-        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "process_resident_memory_bytes{job=\"sdn-controller\"}",
-          "legendFormat": "RSS",
-          "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "go_memstats_heap_alloc_bytes{job=\"sdn-controller\"}",
-          "legendFormat": "Heap Alloc",
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "go_memstats_heap_inuse_bytes{job=\"sdn-controller\"}",
-          "legendFormat": "Heap In-Use",
-          "refId": "C"
-        }
-      ],
-      "title": "Memory Usage",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 41 },
-      "id": 51,
-      "options": {
-        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "go_goroutines{job=\"sdn-controller\"}",
-          "legendFormat": "Goroutines",
-          "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "go_threads{job=\"sdn-controller\"}",
-          "legendFormat": "OS Threads",
-          "refId": "B"
-        }
-      ],
-      "title": "Goroutines & Threads",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "percentunit"
-        }
-      },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 41 },
-      "id": 52,
-      "options": {
-        "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(process_cpu_seconds_total{job=\"sdn-controller\"}[2m])",
-          "legendFormat": "CPU Usage",
-          "refId": "A"
-        }
-      ],
-      "title": "CPU Usage",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 48 },
-      "id": 106,
-      "title": "API Server Requests",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "req/sec",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "unit": "reqps"
-        }
-      },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 49 },
-      "id": 60,
-      "options": {
-        "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (code, method) (rate(rest_client_requests_total{job=\"sdn-controller\"}[2m]))",
-          "legendFormat": "{{ method }} {{ code }}",
-          "refId": "A"
-        }
-      ],
-      "title": "K8s API Request Rate by Method & Status",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisLabel": "retries/sec",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
+          "custom": { "axisBorderShow": false, "axisLabel": "reconciles/sec", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } },
           "unit": "ops"
         }
       },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 49 },
-      "id": 61,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (controller) (rate(workqueue_retries_total[2m]))",
-          "legendFormat": "{{ controller }}",
-          "refId": "A"
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 43 }, "id": 50,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (controller) (rate(controller_runtime_reconcile_total{result=\"success\"}[2m]))", "legendFormat": "{{ controller }}", "refId": "A" }],
+      "title": "Reconcile Rate (success)", "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisLabel": "seconds", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } },
+          "unit": "s"
         }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 43 }, "id": 51,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "histogram_quantile(0.99, sum by (controller, le) (rate(controller_runtime_reconcile_time_seconds_bucket[2m])))", "legendFormat": "{{ controller }} p99", "refId": "A" }],
+      "title": "Reconcile Latency p99", "type": "timeseries"
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 51 }, "id": 106, "title": "Process", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 15, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "bytes" } },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 52 }, "id": 60,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "process_resident_memory_bytes{job=\"sdn-controller\"}", "legendFormat": "RSS", "refId": "A" },
+        { "expr": "go_memstats_heap_alloc_bytes{job=\"sdn-controller\"}", "legendFormat": "Heap Alloc", "refId": "B" }
       ],
-      "title": "Workqueue Retries by Controller",
-      "type": "timeseries"
+      "title": "Memory", "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 15, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "short" } },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 52 }, "id": 61,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "go_goroutines{job=\"sdn-controller\"}", "legendFormat": "Goroutines", "refId": "A" }
+      ],
+      "title": "Goroutines", "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 15, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "auto", "spanNulls": false, "stacking": { "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "unit": "percentunit" } },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 52 }, "id": 62,
+      "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "expr": "rate(process_cpu_seconds_total{job=\"sdn-controller\"}[2m])", "legendFormat": "CPU", "refId": "A" }],
+      "title": "CPU Usage", "type": "timeseries"
     }
   ],
-  "refresh": "10s",
+  "refresh": "15s",
   "schemaVersion": 39,
-  "tags": ["sdn", "controller", "kubernetes"],
-  "templating": { "list": [] },
+  "tags": ["sdn", "controller"],
   "time": { "from": "now-30m", "to": "now" },
-  "timepicker": {},
-  "timezone": "",
   "title": "SDN Controller Overview",
   "uid": "sdn-overview",
-  "version": 2
+  "version": 3
 }

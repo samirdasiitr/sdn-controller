@@ -156,7 +156,7 @@ func (r *NATGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	log.Info("NATGateway reconciled", "natgw", natgw.Name, "vpc", natgw.Spec.VPCRef, "type", natType)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *NATGatewayReconciler) reconcileDelete(ctx context.Context, natgw *gatewayv1alpha1.NATGateway) (ctrl.Result, error) {

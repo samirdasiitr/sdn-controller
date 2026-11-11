@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -132,7 +131,7 @@ func (r *TunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	log.Info("Tunnel reconciled", "tunnel", tunnel.Name, "type", tunnelType,
 		"local", tunnel.Spec.LocalEndpoint.IP, "remote", tunnel.Spec.RemoteEndpoint.IP, "innerMTU", innerMTU)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *TunnelReconciler) reconcileDelete(ctx context.Context, tunnel *infrav1alpha1.Tunnel) (ctrl.Result, error) {

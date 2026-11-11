@@ -19,7 +19,6 @@ package nfv
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -131,7 +130,7 @@ func (r *VirtualNetworkFunctionReconciler) Reconcile(ctx context.Context, req ct
 
 	log.Info("VirtualNetworkFunction reconciled", "vnf", vnf.Name, "type", vnf.Spec.Type,
 		"replicas", vnf.Spec.Replicas, "ready", vnf.Status.ReadyReplicas)
-	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *VirtualNetworkFunctionReconciler) reconcileDelete(ctx context.Context, vnf *nfvv1alpha1.VirtualNetworkFunction) (ctrl.Result, error) {
