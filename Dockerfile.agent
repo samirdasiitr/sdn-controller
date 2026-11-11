@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Build stage
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /workspace
 
@@ -34,6 +34,8 @@ RUN apt-get update && apt-get install -y \
     openvswitch-switch \
     iproute2 \
     ethtool \
+    iptables \
+    procps \
     pciutils \
     && rm -rf /var/lib/apt/lists/*
 

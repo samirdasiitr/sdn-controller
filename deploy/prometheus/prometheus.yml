@@ -12,6 +12,14 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets:
-          - 172.17.0.1:8080
+          - 192.168.150.10:30080
         labels:
           component: controller-manager
+
+  - job_name: sdn-agent
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["192.168.150.11:9101"]
+        labels: {component: node-agent, node: sdn-node-1}
+      - targets: ["192.168.150.12:9101"]
+        labels: {component: node-agent, node: sdn-node-2}

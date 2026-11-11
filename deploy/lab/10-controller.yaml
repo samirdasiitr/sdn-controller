@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: sdn-controller, namespace: sdn-system, labels: {app: sdn-controller}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: sdn-controller}}
+  template:
+    metadata: {labels: {app: sdn-controller}}
+    spec:
+      serviceAccountName: sdn-controller
+      nodeSelector: {kubernetes.io/hostname: sdn-cp}
+      containers:
+        - name: manager
+          image: sdn/controller:lab
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-elect
+            - --metrics-bind-address=:8080
+            - --metrics-secure=false
+            - --health-probe-bind-address=:8081
+          ports:
+            - {name: metrics, containerPort: 8080}
+          livenessProbe: {httpGet: {path: /healthz, port: 8081}, initialDelaySeconds: 15, periodSeconds: 20}
+          readinessProbe: {httpGet: {path: /readyz, port: 8081}, initialDelaySeconds: 5, periodSeconds: 10}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 256Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: sdn-controller-metrics, namespace: sdn-system}
+spec:
+  type: NodePort
+  selector: {app: sdn-controller}
+  ports: [{name: metrics, port: 8080, targetPort: 8080, nodePort: 30080}]

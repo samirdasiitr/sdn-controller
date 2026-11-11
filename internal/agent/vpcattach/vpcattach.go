@@ -84,6 +84,15 @@ func (r *Reconciler) reconcileVPC(ctx context.Context, v *vpcv1alpha1.VPC) error
 		return err
 	}
 
+	var igws gwv1alpha1.InternetGatewayList
+	if err := r.c.List(ctx, &igws, client.InNamespace(v.Namespace)); err != nil {
+		return err
+	}
+	// One router node per VPC owns the gateway addresses (centralized routing);
+	// duplicating them on every node would let a node without NAT answer ARP for
+	// the gateway and leak un-NATed traffic.
+	isRouter := routerNode(v, igws.Items) == r.node
+
 	// Subnet gateway addresses and route flows.
 	var subnets vpcv1alpha1.SubnetList
 	if err := r.c.List(ctx, &subnets, client.InNamespace(v.Namespace)); err != nil {
@@ -105,11 +114,14 @@ func (r *Reconciler) reconcileVPC(ctx context.Context, v *vpcv1alpha1.VPC) error
 		}
 		ones, _ := ipnet.Mask.Size()
 		addr := fmt.Sprintf("%s/%d", sn.Status.Gateway, ones)
+		cidrs = append(cidrs, sn.Spec.CIDR)
+		if !isRouter {
+			continue
+		}
 		wantAddrs[addr] = true
 		if err := sh(ctx, "ip", "addr", "replace", addr, "dev", bridge); err != nil {
 			r.log.Error("set gateway address", "bridge", bridge, "addr", addr, "error", err)
 		}
-		cidrs = append(cidrs, sn.Spec.CIDR)
 	}
 	r.pruneAddrs(ctx, bridge, wantAddrs)
 
@@ -171,22 +183,40 @@ func (r *Reconciler) reconcileVPC(ctx context.Context, v *vpcv1alpha1.VPC) error
 	}
 
 	// Host forwarding for the VPC bridge.
-	_ = sh(ctx, "sysctl", "-w", "net.ipv4.ip_forward=1")
+	if isRouter {
+		_ = sh(ctx, "sysctl", "-w", "net.ipv4.ip_forward=1")
+	}
 	ensureRule(ctx, "filter", "FORWARD", true, "-i", bridge, "-j", "ACCEPT")
 	ensureRule(ctx, "filter", "FORWARD", true, "-o", bridge, "-j", "ACCEPT")
 
 	// Internet Gateway: NAT VPC egress when this node is the active gateway.
-	return r.reconcileIGW(ctx, v, cidrs)
+	return r.reconcileIGW(ctx, v, igws.Items)
 }
 
-func (r *Reconciler) reconcileIGW(ctx context.Context, v *vpcv1alpha1.VPC, _ []string) error {
-	var igws gwv1alpha1.InternetGatewayList
-	if err := r.c.List(ctx, &igws, client.InNamespace(v.Namespace)); err != nil {
-		return err
+// routerNode picks the node that routes for the VPC: the active Internet
+// Gateway node when there is one, otherwise the first attached node.
+func routerNode(v *vpcv1alpha1.VPC, igws []gwv1alpha1.InternetGateway) string {
+	attached := map[string]bool{}
+	first := ""
+	for _, a := range v.Status.AttachedNodes {
+		attached[a.NodeName] = true
+		if first == "" || a.NodeName < first {
+			first = a.NodeName
+		}
 	}
+	for _, g := range igws {
+		if g.Spec.VPCRef == v.Name && g.DeletionTimestamp.IsZero() &&
+			g.Status.Phase == gwv1alpha1.GatewayPhaseReady && attached[g.Status.ActiveNode] {
+			return g.Status.ActiveNode
+		}
+	}
+	return first
+}
+
+func (r *Reconciler) reconcileIGW(ctx context.Context, v *vpcv1alpha1.VPC, igws []gwv1alpha1.InternetGateway) error {
 	comment := "sdn-igw-" + v.Name
 	iface := ""
-	for _, g := range igws.Items {
+	for _, g := range igws {
 		if g.Spec.VPCRef == v.Name && g.DeletionTimestamp.IsZero() &&
 			g.Status.Phase == gwv1alpha1.GatewayPhaseReady && g.Status.ActiveNode == r.node {
 			iface = uplink(ctx, g.Spec.ExternalInterface)

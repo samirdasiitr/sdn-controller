@@ -69,6 +69,8 @@ func init() {
 }
 
 // nolint:gocyclo
+var enableOVSCollector bool
+
 func main() {
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
@@ -99,6 +101,8 @@ func main() {
 		Development: true,
 	}
 	opts.BindFlags(flag.CommandLine)
+	flag.BoolVar(&enableOVSCollector, "enable-ovs-collector", false,
+		"Collect local OVS metrics in the controller (development only; node agents export them in production).")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
@@ -301,16 +305,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Start OVS metrics collector (scrapes OVS state every 10s)
-	nodeName := os.Getenv("NODE_NAME")
-	if nodeName == "" {
-		nodeName, _ = os.Hostname()
-	}
-	ovsUseSudo := os.Getenv("OVS_USE_SUDO") != "false"
-	ovsCollector := telemetry.NewOVSCollector(10*time.Second, nodeName, ovsUseSudo)
-	if err := mgr.Add(ovsCollector); err != nil {
-		setupLog.Error(err, "unable to add OVS metrics collector")
-		os.Exit(1)
+	// OVS metrics are normally served by each node agent; enable here only when
+	// the controller runs on a host that has OVS (local development).
+	if enableOVSCollector {
+		nodeName := os.Getenv("NODE_NAME")
+		if nodeName == "" {
+			nodeName, _ = os.Hostname()
+		}
+		ovsUseSudo := os.Getenv("OVS_USE_SUDO") != "false"
+		if err := mgr.Add(telemetry.NewOVSCollector(10*time.Second, nodeName, ovsUseSudo)); err != nil {
+			setupLog.Error(err, "unable to add OVS metrics collector")
+			os.Exit(1)
+		}
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

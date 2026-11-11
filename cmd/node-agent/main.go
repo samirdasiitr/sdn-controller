@@ -17,11 +17,16 @@ limitations under the License.
 package main
 
 import (
+	"net/http"
+
 	"context"
 	"flag"
+	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log/slog"
 	"os"
 	"os/signal"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"syscall"
 	"time"
 
@@ -41,11 +46,13 @@ func main() {
 		kubeConfig   string
 		otlpEndpoint string
 		ovsSocket    string
+		metricsAddr  string
 	)
 	flag.StringVar(&nodeName, "node-name", os.Getenv("NODE_NAME"), "Kubernetes node name (defaults to NODE_NAME env var)")
 	flag.StringVar(&kubeConfig, "kubeconfig", "", "Path to kubeconfig file (defaults to in-cluster config)")
 	flag.StringVar(&otlpEndpoint, "otlp-endpoint", "otel-collector:4317", "OpenTelemetry collector gRPC endpoint")
 	flag.StringVar(&ovsSocket, "ovs-socket", "/var/run/openvswitch/db.sock", "Path to OVS database socket")
+	flag.StringVar(&metricsAddr, "metrics-addr", ":9101", "Address to serve Prometheus metrics on (empty disables)")
 	flag.Parse()
 
 	// Set up structured logging.
@@ -88,6 +95,10 @@ func main() {
 		OVSSocket:    ovsSocket,
 	}
 
+	if metricsAddr != "" {
+		go serveMetrics(ctx, logger, metricsAddr, nodeName)
+	}
+
 	nodeAgent := agent.New(cfg, logger)
 	if err := nodeAgent.Start(ctx); err != nil {
 		logger.Error("failed to start node agent", "error", err)
@@ -112,4 +123,22 @@ func main() {
 	}
 
 	logger.Info("node agent stopped")
+}
+
+// serveMetrics exposes per-node OVS state (bridges, ports, flows, throughput) for Prometheus.
+func serveMetrics(ctx context.Context, logger *slog.Logger, addr, nodeName string) {
+	collector := telemetry.NewOVSCollector(10*time.Second, nodeName, false)
+	go func() { _ = collector.Start(logr.NewContext(ctx, logr.Discard())) }()
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(ctrlmetrics.Registry, promhttp.HandlerOpts{}))
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		<-ctx.Done()
+		_ = srv.Close()
+	}()
+	logger.Info("serving metrics", "addr", addr)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Error("metrics server failed", "error", err)
+	}
 }

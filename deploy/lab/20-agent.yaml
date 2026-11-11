@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: sdn-agent, namespace: sdn-system, labels: {app: sdn-agent}}
+spec:
+  selector: {matchLabels: {app: sdn-agent}}
+  updateStrategy: {type: RollingUpdate}
+  template:
+    metadata: {labels: {app: sdn-agent}}
+    spec:
+      serviceAccountName: sdn-agent
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector: {sdn.io/role: node}
+      tolerations: [{operator: Exists}]
+      containers:
+        - name: agent
+          image: sdn/agent:lab
+          imagePullPolicy: IfNotPresent
+          args: ["--metrics-addr=:9101", "--otlp-endpoint=192.168.150.1:4317"]
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          securityContext: {privileged: true}
+          ports: [{name: metrics, containerPort: 9101, hostPort: 9101}]
+          volumeMounts:
+            - {name: ovs-run, mountPath: /run/openvswitch}
+            - {name: xtables-lock, mountPath: /run/xtables.lock}
+            - {name: modules, mountPath: /lib/modules, readOnly: true}
+          resources: {requests: {cpu: 50m, memory: 64Mi}}
+      volumes:
+        - {name: ovs-run, hostPath: {path: /run/openvswitch, type: Directory}}
+        - {name: xtables-lock, hostPath: {path: /run/xtables.lock, type: FileOrCreate}}
+        - {name: modules, hostPath: {path: /lib/modules}}
